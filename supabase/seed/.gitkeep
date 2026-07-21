@@ -1,0 +1,3 @@
+-- Seed data for development
+-- This will be implemented in a future milestone.
+SELECT 1;

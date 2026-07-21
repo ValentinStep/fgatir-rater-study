@@ -1,0 +1,6 @@
+-- FGATIR Rater Study - Database Schema
+-- Supabase PostgreSQL migrations
+-- This will be implemented in a future milestone.
+
+-- Placeholder for initial schema migration
+SELECT 1;

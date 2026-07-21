@@ -1,0 +1,645 @@
+You are acting as a senior full-stack engineer with experience in medical-image visualization, DICOM, React, TypeScript, Cornerstone3D, Supabase, testing, and secure research software.
+Your task is to build a functional, testable browser-based MRI rater-study application for blinded comparison of original and denoised brain MRI images.
+Work directly in the currently opened VS Code workspace. 
+The project directory: /Volumes/research/fieree01lab/labspace/Valentin/FGATIR_ratertest case: /Volumes/research/fieree01lab/labspace/Valentin/FGATIR_rater/test_case/Volumes/research/fieree01lab/labspace/Valentin/FGATIR_rater/test_case/63436145 – original dicoms
+/Volumes/research/fieree01lab/labspace/Valentin/FGATIR_rater/test_case/63436145_denoised – denoised dicoms
+You can also find this prompt opened as Prompt.txt in the workspace in case you need to refer to it multiple times.  
+1. Project context
+The workspace contains files from an earlier image-annotation project:
+	•	index.html
+	•	README.md
+	•	config.example.js
+	•	.env.example
+	•	landmarks.config.json
+	•	schema.sql
+First inspect all of these files completely.
+The existing application is a lightweight React application that:
+	•	loads React through a CDN;
+	•	renders preconverted PNG slices using HTML canvas;
+	•	supports stack scrolling;
+	•	implements custom window/level, zoom, and pan;
+	•	identifies raters;
+	•	saves progress and annotations to Supabase;
+	•	loads cases from a manifest;
+	•	displays progress;
+	•	allows resuming a session.
+The old application was designed for landmark placement. The new application is for subjective image-quality ratings of brain MRI before and after denoising.
+Reuse useful workflow and UI ideas from the old application, but do not retain its landmark-placement functionality.
+2. Source images
+I will provide a local filesystem path to a test dataset containing one case with:
+	•	an original DICOM series;
+	•	a denoised DICOM series.
+The path may initially be outside the repository.
+At the beginning of your work:
+	1.	Ask me only for the DICOM test-folder path if it is not already available in the workspace or conversation.
+	2.	Inspect the directory structure.
+	3.	Inspect representative DICOM metadata from both series.
+	4.	Do not print or commit protected health information.
+	5.	Report whether the files appear deidentified.
+	6.	Detect the number of instances, transfer syntaxes, dimensions, bit depth, orientation, spacing, series descriptions, and ordering fields.
+	7.	Verify whether the original and denoised series have matching geometry.
+Never assume filenames are in slice order. Order slices using valid DICOM spatial metadata, preferably image orientation, image position, and instance information as appropriate.
+Do not copy the test DICOM data into Git history. Add all local image-data directories to .gitignore.
+3. Primary goal
+Build a minimal but functional web application that allows a rater to:
+	1.	authenticate or enter through a controlled study login;
+	2.	receive a blinded, randomized image series;
+	3.	scroll through all slices;
+	4.	adjust window width and window center;
+	5.	zoom;
+	6.	pan;
+	7.	reset the viewport;
+	8.	view the current slice number and total slice count;
+	9.	complete configurable image-quality ratings;
+	10.	optionally enter a comment;
+	11.	save the rating;
+	12.	advance to the next randomized series;
+	13.	resume an interrupted session without losing completed ratings.
+The first milestone must work locally with the provided test case.
+The architecture must also make it straightforward to ingest all remaining cases later without changing application source code.
+4. Required technology
+Use:
+	•	React;
+	•	TypeScript;
+	•	Vite;
+	•	Cornerstone3D;
+	•	Cornerstone3D Tools;
+	•	the current Cornerstone DICOM image loader;
+	•	Supabase for eventual authentication, database storage, and private image storage;
+	•	Vitest for unit and component tests;
+	•	Playwright for essential browser-level tests;
+	•	ESLint;
+	•	Prettier.
+Use the official Cornerstone Vite/React starter and current official Cornerstone examples as architectural references where useful.
+Do not use legacy packages such as:
+	•	cornerstone-core;
+	•	legacy cornerstone-tools;
+	•	legacy cornerstone-wado-image-loader.
+Use current @cornerstonejs/* packages.
+Do not use OHIF unless a clear technical blocker makes Cornerstone3D unsuitable. This application should remain substantially smaller than OHIF.
+Pin working dependency versions in the lockfile. Record the tested Node version in .nvmrc.
+5. Development approach
+Implement the project in small, verifiable milestones.
+Do not attempt the complete application in one untested code dump.
+For each milestone:
+	1.	explain briefly what you are changing;
+	2.	make the changes;
+	3.	run the relevant commands;
+	4.	inspect errors and warnings;
+	5.	correct them;
+	6.	report the result;
+	7.	update project documentation.
+Do not claim that something works unless you actually ran the relevant test, build, or validation command.
+When an error occurs, diagnose the cause rather than hiding it or disabling the relevant check.
+6. Proposed architecture
+Create a clean structure similar to:
+project-root/
+├── public/
+│   └── assets/
+├── scripts/
+│   ├── inspect-dicom.ts
+│   ├── ingest-cases.ts
+│   └── validate-manifest.ts
+├── src/
+│   ├── app/
+│   ├── components/
+│   │   ├── DicomViewport/
+│   │   ├── ViewerToolbar/
+│   │   ├── RatingForm/
+│   │   ├── ProgressHeader/
+│   │   └── DiagnosticPanel/
+│   ├── cornerstone/
+│   │   ├── initializeCornerstone.ts
+│   │   ├── configureTools.ts
+│   │   ├── createStack.ts
+│   │   └── viewportEvents.ts
+│   ├── config/
+│   │   ├── ratingQuestions.ts
+│   │   └── studyConfig.ts
+│   ├── services/
+│   │   ├── caseService.ts
+│   │   ├── ratingService.ts
+│   │   ├── sessionService.ts
+│   │   └── supabaseClient.ts
+│   ├── types/
+│   ├── utils/
+│   └── tests/
+├── supabase/
+│   ├── migrations/
+│   └── seed/
+├── .env.example
+├── .gitignore
+├── README.md
+├── package.json
+├── tsconfig.json
+└── vite.config.ts
+Adjust this structure only when there is a concrete reason.
+Keep medical-image display logic separate from:
+	•	rating-form logic;
+	•	authentication;
+	•	study randomization;
+	•	persistence;
+	•	case ingestion.
+7. Local-development image strategy
+A deployed browser cannot directly read an arbitrary local filesystem path.
+Therefore implement a clear local-development ingestion workflow.
+Create a script such as:
+npm run inspect-dicom -- --input "/path/to/test/case"
+and:
+npm run ingest-cases -- --input "/path/to/test/dataset" --output "./local-data"
+The ingestion process must:
+	•	inspect the case folders;
+	•	identify DICOM files;
+	•	group files into series;
+	•	extract only required non-PHI metadata;
+	•	determine slice order;
+	•	assign neutral study identifiers;
+	•	generate a manifest;
+	•	preserve DICOM pixel data rather than converting it to 8-bit PNG;
+	•	avoid embedding original or denoised status in browser-visible labels;
+	•	create deterministic output when given the same input and seed;
+	•	validate matching geometry between paired series;
+	•	generate a clear error report for malformed or mismatched cases.
+For local testing, serve DICOM instances from a repository-ignored local directory or a simple local development endpoint.
+Do not place actual DICOM data under public/ if that risks accidental Git inclusion.
+8. Future hosted-data strategy
+Design the data-access abstraction so local files can later be replaced by private Supabase Storage without rewriting the viewer.
+Define an interface resembling:
+interface ImageSource {
+  getManifest(): Promise<StudyManifest>;
+  getSeriesImageIds(seriesId: string): Promise<string[]>;
+}
+Provide:
+	•	a local-development implementation;
+	•	a Supabase-ready implementation or documented stub.
+For the hosted version:
+	•	use a private Supabase Storage bucket;
+	•	use authenticated access or short-lived signed URLs;
+	•	never expose a Supabase service-role key in browser code;
+	•	keep secrets in environment variables;
+	•	commit only .env.example;
+	•	enable row-level security;
+	•	prevent raters from reading or changing other raters’ submissions;
+	•	prevent raters from discovering original-versus-denoised status through storage paths, URLs, metadata, API responses, or UI labels.
+9. DICOM viewer requirements
+Use a Cornerstone3D stack viewport for the first implementation.
+Required interactions:
+	•	mouse wheel: previous/next slice;
+	•	left-drag or clearly selected tool: window/level;
+	•	right-drag or clearly selected tool: pan;
+	•	zoom tool and keyboard-accessible zoom controls;
+	•	reset button;
+	•	first-slice and last-slice bounds;
+	•	slice slider;
+	•	current slice/total overlay;
+	•	visible window width/window center;
+	•	loading state;
+	•	decoding-error state;
+	•	empty-series state;
+	•	unsupported-transfer-syntax error;
+	•	keyboard navigation;
+	•	prevention of the browser context menu where it conflicts with viewer interaction.
+Use Cornerstone tools rather than reimplementing window/level, pan, zoom, or scrolling manually.
+Configure DICOM codecs and web workers correctly for both development and production builds.
+Do not silently convert images to 8-bit PNG.
+Preserve DICOM pixel precision and apply DICOM rescale and VOI information correctly.
+10. MRI display consistency
+This is a denoising comparison study, so display consistency is scientifically important.
+Implement and document the following:
+	•	Original and denoised images must use equivalent initial presentation rules.
+	•	Do not independently normalize each displayed image in a way that could conceal or exaggerate denoising.
+	•	Do not use filenames or series descriptions as visible labels.
+	•	Do not display acquisition dates, patient names, accession numbers, institution names, processing labels, or other identifying metadata.
+	•	Strip or avoid visible overlays that reveal processing status.
+	•	Use neutral identifiers such as Image set 014.
+	•	Reset the viewport according to a consistent rule at the beginning of each item.
+	•	Do not let presentation state from the previous item unintentionally carry into the next item.
+	•	Record the initial display rule in the README.
+	•	Include a validation check that paired images have matching dimensions, orientation, spacing, and slice count, or produce a visible warning when they do not.
+For the initial version, present one image set at a time rather than side-by-side unless the study configuration explicitly requests paired simultaneous viewing.
+11. Blinding and randomization
+Implement deterministic, reproducible randomization.
+The system must:
+	•	assign neutral IDs to all image sets;
+	•	hide original-versus-denoised status from the rater;
+	•	support multiple raters;
+	•	support a reproducible randomization seed;
+	•	balance presentation order when possible;
+	•	avoid showing both versions of the same subject consecutively when possible;
+	•	store the mapping separately from rater-facing data;
+	•	prevent the browser client from receiving unnecessary unblinded information.
+Create a randomization table with fields conceptually similar to:
+rater_id
+subject_id
+blinded_series_id
+condition
+presentation_order
+randomization_seed
+The condition field must not be exposed through the rater-facing client.
+The administrator must be able to export the unblinding key separately.
+12. Rating configuration
+Make rating questions configuration-driven rather than hard-coded into the form.
+Create a typed configuration supporting:
+	•	Likert-scale questions;
+	•	categorical questions;
+	•	boolean questions;
+	•	optional free-text comments;
+	•	required versus optional questions;
+	•	help text;
+	•	configurable minimum and maximum;
+	•	configurable labels for scale endpoints.
+Start with:
+	1.	Overall image quality: 1–5
+	2.	Perceived image noise: 1–5
+	3.	Anatomic sharpness: 1–5
+	4.	Artifacts: 1–5
+	5.	Diagnostic confidence: 1–5
+	6.	Optional comments
+Use neutral wording. Do not describe which ratings are expected to improve after denoising.
+Make this configuration easy to edit in one file.
+13. Persistence model
+Create a database schema suitable for Supabase.
+At minimum, support:
+Raters
+id
+study_id
+auth_user_id or controlled rater code
+display_code
+created_at
+active
+Cases or subjects
+id
+study_id
+neutral_subject_code
+created_at
+Image series
+id
+case_id
+blinded_series_code
+storage_prefix
+slice_count
+geometry_hash
+created_at
+Do not expose the processing condition in rater-facing queries.
+Assignments
+id
+rater_id
+series_id
+presentation_order
+status
+started_at
+completed_at
+Ratings
+id
+assignment_id
+rater_id
+series_id
+responses_json
+comments
+started_at
+submitted_at
+duration_seconds
+viewer_state_json
+created_at
+updated_at
+Create uniqueness constraints to prevent duplicate final submissions for the same assignment unless an administrator explicitly enables editing.
+Use migrations rather than only a standalone schema dump.
+Include RLS policies or clearly marked development policies that can later be tightened.
+Do not ship permissive production policies merely to make the demo work.
+14. Session behavior
+The application must:
+	•	restore the rater’s incomplete session after refresh;
+	•	not lose completed ratings;
+	•	clearly distinguish saved from unsaved work;
+	•	disable submission until all required ratings are answered;
+	•	avoid accidental double submission;
+	•	show a meaningful retry option after network failure;
+	•	preserve unsaved answers during a temporary save failure;
+	•	support previous-item review only if enabled in study configuration;
+	•	show completion status without exposing treatment allocation.
+Record:
+	•	item-open time;
+	•	submission time;
+	•	duration;
+	•	current viewer state at submission;
+	•	browser and application version if useful;
+	•	non-PHI diagnostic information.
+15. Diagnostics
+Create a development-only diagnostic panel available through a route such as:
+/diagnostics
+or through a visible development-mode button.
+It must report:
+	•	application version;
+	•	build mode;
+	•	browser information;
+	•	WebGL availability;
+	•	Cornerstone initialization status;
+	•	DICOM image-loader initialization status;
+	•	worker initialization status;
+	•	registered tools;
+	•	manifest load status;
+	•	total cases and series;
+	•	current neutral series ID;
+	•	number of DICOM instances;
+	•	first and last image IDs with sensitive path elements redacted;
+	•	image dimensions;
+	•	rows and columns;
+	•	bits allocated;
+	•	bits stored;
+	•	pixel representation;
+	•	transfer syntax;
+	•	photometric interpretation;
+	•	rescale slope and intercept;
+	•	window center and width when present;
+	•	current slice;
+	•	current viewport VOI;
+	•	image-load timing;
+	•	cache information where available;
+	•	recent non-sensitive warnings and errors.
+Add a “Copy diagnostic report” button.
+The copied report must not contain:
+	•	patient names;
+	•	medical-record numbers;
+	•	accession numbers;
+	•	dates of birth;
+	•	full local filesystem paths;
+	•	Supabase credentials;
+	•	signed URLs;
+	•	authorization tokens;
+	•	unblinded series status.
+Use structured logging.
+Provide logging levels:
+	•	error;
+	•	warn;
+	•	info;
+	•	debug.
+Development builds may show debug logs. Production builds should default to warnings and errors.
+16. Error handling
+Provide clear, actionable error messages for:
+	•	missing configuration;
+	•	missing manifest;
+	•	inaccessible DICOM file;
+	•	invalid DICOM;
+	•	unsupported transfer syntax;
+	•	series with zero instances;
+	•	inconsistent rows or columns;
+	•	inconsistent image orientation;
+	•	duplicate slice positions;
+	•	original/denoised geometry mismatch;
+	•	failed Supabase connection;
+	•	authentication failure;
+	•	failed save;
+	•	expired signed URL;
+	•	Cornerstone worker failure;
+	•	failed production build.
+Never leave the viewer as an unexplained black rectangle.
+Include a retry action where appropriate.
+17. Testing requirements
+Create tests as part of implementation, not afterward.
+Unit tests
+Test at least:
+	•	manifest validation;
+	•	deterministic neutral-ID generation;
+	•	deterministic randomization;
+	•	prevention of consecutive paired images when feasible;
+	•	slice sorting;
+	•	geometry comparison;
+	•	rating-form validation;
+	•	required-question handling;
+	•	serialization of ratings;
+	•	redaction of diagnostic output;
+	•	environment-configuration validation.
+Component tests
+Test at least:
+	•	rating form rendering;
+	•	disabled submit state;
+	•	completed submit state;
+	•	loading state;
+	•	error state;
+	•	progress display;
+	•	diagnostic panel redaction.
+End-to-end tests
+Using Playwright, test at least:
+	1.	application starts;
+	2.	test manifest loads;
+	3.	first DICOM stack displays;
+	4.	slice changes with an interaction;
+	5.	rating form accepts values;
+	6.	required fields are enforced;
+	7.	save-and-next works using a development mock backend;
+	8.	refresh resumes progress;
+	9.	diagnostics page loads;
+	10.	no obvious processing-status text appears in the rater interface.
+Where true DICOM rendering is difficult in headless CI, separate:
+	•	deterministic UI tests using a controlled fixture or mock;
+	•	one documented local integration test using the provided DICOM series.
+18. Validation scripts
+Add these commands or close equivalents:
+npm run dev
+npm run build
+npm run preview
+npm run lint
+npm run typecheck
+npm run test
+npm run test:watch
+npm run test:e2e
+npm run inspect-dicom -- --input "/path/to/case"
+npm run ingest-cases -- --input "/path/to/dataset" --output "./local-data"
+npm run validate-manifest -- --manifest "./local-data/manifest.json"
+npm run check
+npm run check should run:
+	•	type checking;
+	•	linting;
+	•	unit tests;
+	•	production build.
+Make sure each command is documented.
+19. Git and GitHub readiness
+Initialize or prepare the project for GitHub.
+Include:
+	•	a meaningful .gitignore;
+	•	no DICOM data;
+	•	no secrets;
+	•	no generated local manifests containing sensitive paths;
+	•	.env.example;
+	•	a clear README.md;
+	•	an open-source license placeholder, but ask me before selecting the final license;
+	•	GitHub Actions for lint, typecheck, tests, and production build;
+	•	a dependency lockfile;
+	•	a contributing section;
+	•	a simple changelog;
+	•	an application version;
+	•	documentation of supported browsers;
+	•	deployment instructions.
+The production build must be a standard Vite static bundle unless a server function is required for secure data access.
+Explain that static hosting alone cannot securely serve private DICOM files without an authenticated storage/API layer.
+Support configurable base paths so deployment under a GitHub Pages subpath does not break static assets. However, do not recommend GitHub Pages for hosting protected study images or production rater data.
+20. Deployment targets
+Prepare documentation for:
+Local development
+	•	local Vite server;
+	•	repository-ignored DICOM test data;
+	•	mock persistence or local-development persistence.
+Static frontend preview
+	•	GitHub Pages, Netlify, or Vercel for synthetic/deidentified demonstration data only.
+Production research deployment
+	•	Vercel, Netlify, or another institutional web host for the frontend;
+	•	Supabase Auth;
+	•	private Supabase Storage;
+	•	Supabase PostgreSQL;
+	•	RLS;
+	•	signed or authenticated image access.
+Do not put real patient data into a public bucket.
+21. Privacy and security guardrails
+Treat all clinical images as potentially sensitive until verified otherwise.
+Do not:
+	•	commit DICOM files;
+	•	print PHI to the terminal unnecessarily;
+	•	expose service-role keys;
+	•	expose raw unblinding metadata to the browser;
+	•	use public storage for real study images;
+	•	log signed URLs;
+	•	use a typed rater name as the sole production identity;
+	•	create permissive RLS policies without prominently labeling them development-only;
+	•	assume that removing PatientName alone constitutes full deidentification.
+Add a documentation section stating that this is a research image-review application and not a certified diagnostic medical device.
+22. Performance
+For the test case, implement:
+	•	progressive loading;
+	•	preload or prefetch of nearby slices where supported;
+	•	loading indicators;
+	•	caching through Cornerstone;
+	•	cleanup when changing series;
+	•	prevention of duplicated tool groups or rendering engines during React remounts;
+	•	cleanup of event listeners;
+	•	avoidance of repeated Cornerstone initialization.
+Measure and report:
+	•	initial application load;
+	•	first image load;
+	•	full-stack readiness;
+	•	next-slice latency;
+	•	production bundle size.
+Do not optimize prematurely, but avoid obvious memory leaks.
+23. Accessibility and usability
+The interface should be minimal and suitable for prolonged rating sessions.
+Provide:
+	•	dark image-viewer background;
+	•	readable rating controls;
+	•	keyboard-accessible form fields;
+	•	visible focus states;
+	•	tooltips or a compact help panel;
+	•	clear hotkeys;
+	•	confirmation of successful save;
+	•	warning before leaving with unsaved ratings;
+	•	responsive layout for typical desktop monitors.
+Desktop is the primary target. Mobile support is not required for the first version.
+24. Implementation milestones
+Follow this order.
+Milestone 0: Repository assessment
+	•	Inspect supplied files.
+	•	Summarize reusable pieces.
+	•	Identify obsolete or unsafe parts.
+	•	Inspect the DICOM test folder.
+	•	Establish the project plan.
+	•	Make no major implementation assumptions without checking the files.
+Milestone 1: Project scaffold
+	•	Create Vite React TypeScript project.
+	•	Add linting, formatting, tests, environment configuration, and Git hygiene.
+	•	Preserve the supplied files in an archive/legacy-prototype/ directory or document their replacement.
+	•	Do not lose useful code before migration is complete.
+Milestone 2: Minimal Cornerstone viewer
+	•	Display one test DICOM series.
+	•	Scroll slices.
+	•	Window/level.
+	•	Pan.
+	•	Zoom.
+	•	Reset.
+	•	Slice counter.
+	•	Loading and error states.
+	•	Diagnostic output.
+Stop and verify this milestone thoroughly before adding the study workflow.
+Milestone 3: Original/denoised ingestion
+	•	Inspect both test series.
+	•	Validate geometry.
+	•	Generate neutral IDs.
+	•	Build a local manifest.
+	•	Ensure the UI does not reveal condition.
+Milestone 4: Rating workflow
+	•	Add configurable rating questions.
+	•	Add progress.
+	•	Add save-and-next.
+	•	Add local mock persistence.
+	•	Add resume behavior.
+Milestone 5: Randomization and blinding
+	•	Add reproducible assignment generation.
+	•	Add separate administrator unblinding export.
+	•	Test that condition is absent from rater-facing data.
+Milestone 6: Supabase integration
+	•	Create migrations.
+	•	Add Auth-ready rater identity.
+	•	Add RLS.
+	•	Add private Storage design.
+	•	Keep a local mock mode for tests.
+Milestone 7: Testing and GitHub readiness
+	•	Complete unit, component, and E2E tests.
+	•	Add GitHub Actions.
+	•	Verify production build.
+	•	Update documentation.
+	•	Produce a deployment checklist.
+25. Acceptance criteria for the first usable prototype
+The first prototype is accepted only when all of the following are true:
+	•	npm install succeeds from a clean checkout.
+	•	npm run dev starts the application.
+	•	The test original series loads.
+	•	The test denoised series loads.
+	•	Both series are displayed from DICOM pixel data, not PNG screenshots.
+	•	Slice scrolling works.
+	•	Window/level works.
+	•	Pan works.
+	•	Zoom works.
+	•	Reset works.
+	•	Current slice and total slices are visible.
+	•	No PHI is visible in the interface.
+	•	Original/denoised status is not visible.
+	•	Rating questions render.
+	•	Required questions prevent incomplete submission.
+	•	A completed rating can be saved in development mode.
+	•	Refresh restores progress.
+	•	Diagnostic output can be copied.
+	•	Diagnostic output is redacted.
+	•	npm run typecheck passes.
+	•	npm run lint passes.
+	•	npm run test passes.
+	•	npm run build passes.
+	•	The README contains exact setup and testing instructions.
+	•	DICOM files, credentials, and local paths are not tracked by Git.
+26. Required communication format
+At the start, provide:
+	1.	a concise assessment of the legacy files;
+	2.	the proposed migration plan;
+	3.	any blocker that requires my input.
+After each milestone, provide:
+	1.	files added or changed;
+	2.	commands run;
+	3.	test results;
+	4.	errors encountered and their resolution;
+	5.	how I can manually verify the milestone;
+	6.	the next milestone.
+When reporting test results, use exact statements such as:
+PASS: npm run typecheck
+PASS: npm run lint
+PASS: npm run test — 24 tests
+PASS: npm run build
+MANUAL PASS: 176 slices loaded and scrollable
+Do not use vague statements such as “should work,” “seems fine,” or “likely fixed” when the behavior can be tested.
+27. First action
+Begin by inspecting the existing workspace files and identifying the supplied DICOM test dataset.
+Do not immediately rewrite the entire project.
+Report:
+	•	what the legacy application uses;
+	•	which parts will be retained conceptually;
+	•	which parts will be replaced;
+	•	the detected DICOM folder organization;
+	•	any deidentification concerns;
+	•	the exact Milestone 1 implementation plan.
+Then proceed with Milestone 1 unless a genuinely blocking input is missing.
+ 

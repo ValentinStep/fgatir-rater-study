@@ -1,0 +1,8 @@
+# Local credentials — never commit
+config.js
+.env
+
+# Local data (do not commit images / manifests / exported annotations)
+images/
+manifest.json
+*.annotations.json
