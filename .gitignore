@@ -42,6 +42,10 @@ yarn-debug.log*
 yarn-error.log*
 *.log
 
+# Unblinding export (admin-only, never commit)
+unblinding-export.csv
+local-data/unblinding-export.csv
+
 # Misc
 *.tsbuildinfo
 .eslintcache

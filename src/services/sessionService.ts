@@ -10,37 +10,44 @@ import type {
   SessionState,
   RatingResponse,
   StudyManifest,
+  RandomizationConfig,
+  RandomizedAssignment,
 } from '@/types';
 import { getRatingService } from './ratingService';
+import { generateAssignments } from '@/utils/assignmentGenerator';
+import { STUDY_CONFIG } from '@/config/studyConfig';
 
 // --- Build assignments from manifest ---
 
 /**
- * Build a sequential list of assignments from the manifest.
- * For Milestone 4, presents ALL series sequentially (no randomization).
+ * Build a randomized list of assignments from the manifest.
+ * Uses deterministic seeded randomization for reproducibility.
+ *
+ * @param manifest - Study manifest (blinded, no condition info)
+ * @param raterId - Unique rater identifier
+ * @param seed - Optional override seed (defaults to STUDY_CONFIG.randomizationSeed)
  */
 export function buildAssignments(
   manifest: StudyManifest,
   raterId: string,
+  seed?: string,
 ): Assignment[] {
-  const assignments: Assignment[] = [];
-  let order = 0;
+  const config: RandomizationConfig = {
+    seed: seed ?? STUDY_CONFIG.randomizationSeed,
+    raterId,
+  };
 
-  for (const caseEntry of manifest.cases) {
-    for (const series of caseEntry.series) {
-      assignments.push({
-        id: `${raterId}_${series.seriesId}`,
-        raterId,
-        seriesId: series.seriesId,
-        caseSubjectId: caseEntry.subjectId,
-        presentationOrder: order,
-        displayLabel: `Image set ${order + 1}`,
-      });
-      order++;
-    }
-  }
+  const randomized: RandomizedAssignment[] = generateAssignments(manifest, config);
 
-  return assignments;
+  // Map RandomizedAssignment → Assignment (keeping field naming consistent)
+  return randomized.map((ra) => ({
+    id: ra.id,
+    raterId: ra.raterId,
+    seriesId: ra.seriesId,
+    caseSubjectId: ra.subjectId,
+    presentationOrder: ra.presentationOrder,
+    displayLabel: ra.displayLabel,
+  }));
 }
 
 // --- Session Service Class ---

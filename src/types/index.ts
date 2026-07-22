@@ -134,3 +134,23 @@ export interface Assignment {
   presentationOrder: number;
   displayLabel: string; // e.g., "Image set 1"
 }
+
+// --- Randomization Types ---
+
+/** Configuration for deterministic randomization */
+export interface RandomizationConfig {
+  /** Study-level seed, e.g., "study-2024-fgatir" */
+  seed: string;
+  /** Unique rater identifier */
+  raterId: string;
+}
+
+/** A randomized assignment produced by the randomization engine */
+export interface RandomizedAssignment {
+  id: string;
+  raterId: string;
+  seriesId: string;
+  subjectId: string;
+  presentationOrder: number;
+  displayLabel: string; // "Image set 1", "Image set 2", etc.
+}

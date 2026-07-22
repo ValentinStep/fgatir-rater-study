@@ -12,6 +12,8 @@ export interface StudyConfig {
   requireComments: boolean;
   /** Dev-mode rater ID for local testing */
   devRaterId: string;
+  /** Deterministic randomization seed for assignment ordering */
+  randomizationSeed: string;
   /** Feature flags */
   features: {
     /** Show diagnostic panel (Ctrl+Shift+D) */
@@ -30,6 +32,7 @@ export const STUDY_CONFIG: StudyConfig = {
   allowPreviousItemReview: false,
   requireComments: false,
   devRaterId: 'dev-rater-001',
+  randomizationSeed: 'fgatir-study-2024-v1',
   features: {
     diagnosticPanel: true,
     keyboardNavigation: true,
