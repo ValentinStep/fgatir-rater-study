@@ -1,0 +1,59 @@
+{
+  "version": "1.0.0-test",
+  "cases": [
+    {
+      "subjectId": "SUB_TEST_001",
+      "series": [
+        {
+          "seriesId": "ser_test_aaa111",
+          "sliceCount": 3,
+          "rows": 256,
+          "columns": 256,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 40,
+          "windowWidth": 80,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        },
+        {
+          "seriesId": "ser_test_bbb222",
+          "sliceCount": 3,
+          "rows": 256,
+          "columns": 256,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 40,
+          "windowWidth": 80,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "SUB_TEST_002",
+      "series": [
+        {
+          "seriesId": "ser_test_ccc333",
+          "sliceCount": 5,
+          "rows": 512,
+          "columns": 512,
+          "bitsAllocated": 16,
+          "bitsStored": 16,
+          "windowCenter": 21,
+          "windowWidth": 54,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        },
+        {
+          "seriesId": "ser_test_ddd444",
+          "sliceCount": 5,
+          "rows": 512,
+          "columns": 512,
+          "bitsAllocated": 16,
+          "bitsStored": 16,
+          "windowCenter": 21,
+          "windowWidth": 54,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    }
+  ]
+}
