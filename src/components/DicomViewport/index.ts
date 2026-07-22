@@ -1,3 +1,2 @@
-// DicomViewport component placeholder
-// Will render cornerstone.js DICOM viewport for MRI slice viewing
-export {};
+export { DicomViewport, type DicomViewportProps } from './DicomViewport';
+export { ViewerToolbar, type ViewerToolbarProps } from '../ViewerToolbar/ViewerToolbar';

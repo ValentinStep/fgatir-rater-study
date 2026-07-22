@@ -1,3 +1,1 @@
-// ProgressHeader component placeholder
-// Will display study progress (current case / total cases)
-export {};
+export { ProgressHeader, type ProgressHeaderProps } from './ProgressHeader';

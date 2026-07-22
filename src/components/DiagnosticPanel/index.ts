@@ -1,3 +1,1 @@
-// DiagnosticPanel component placeholder
-// Will show diagnostic information for development/debugging
-export {};
+export { DiagnosticPanel, type DiagnosticPanelProps } from './DiagnosticPanel';

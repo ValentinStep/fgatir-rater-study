@@ -1,3 +1,3 @@
 // Application configuration
-// Will export study config, feature flags, and environment-specific settings
-export {};
+export { RATING_QUESTIONS, getRequiredQuestionIds, validateResponses } from './ratingQuestions';
+export { STUDY_CONFIG, type StudyConfig } from './studyConfig';
