@@ -31,6 +31,7 @@ const VIEWPORT_ID = 'fgatir-stack-viewport';
 
 function App() {
   const [view, setView] = useState<AppView>('loading');
+  const [loadingStatus, setLoadingStatus] = useState('Starting...');
   const [error, setError] = useState<string | null>(null);
   const [imageIds, setImageIds] = useState<string[]>([]);
   const [manifest, setManifest] = useState<StudyManifest | null>(null);
@@ -62,11 +63,13 @@ function App() {
     async function initialize() {
       try {
         // Initialize Cornerstone
+        setLoadingStatus('Initializing DICOM engine...');
         await initCornerstone();
 
         if (cancelled) return;
 
         // Load manifest
+        setLoadingStatus('Loading study manifest...');
         const source = getImageSource();
         const loadedManifest = await source.getManifest();
 
@@ -85,6 +88,7 @@ function App() {
         }
 
         // Set up session service and restore/init session
+        setLoadingStatus('Setting up session...');
         const sessionSvc = new SessionService(raterId, builtAssignments);
         sessionServiceRef.current = sessionSvc;
 
@@ -110,6 +114,7 @@ function App() {
         setInProgressResponses(session.inProgressResponses);
 
         // Load image IDs for the series
+        setLoadingStatus('Loading DICOM images...');
         const ids = await source.getSeriesImageIds(assignment.seriesId);
 
         if (cancelled) return;
@@ -296,6 +301,7 @@ function App() {
           <div style={loadingContainerStyle}>
             <h1 style={titleStyle}>FGATIR Rater Study</h1>
             <p style={subtitleStyle}>Initializing DICOM viewer...</p>
+            <p style={statusTextStyle}>{loadingStatus}</p>
             <div style={spinnerContainerStyle}>
               <div style={spinnerStyle} />
             </div>
@@ -436,7 +442,14 @@ const titleStyle: React.CSSProperties = {
 const subtitleStyle: React.CSSProperties = {
   fontSize: 14,
   color: '#888',
-  marginBottom: 24,
+  marginBottom: 8,
+};
+
+const statusTextStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: '#6c63ff',
+  marginBottom: 20,
+  minHeight: 16,
 };
 
 const spinnerContainerStyle: React.CSSProperties = {

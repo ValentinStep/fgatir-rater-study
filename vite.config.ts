@@ -30,6 +30,7 @@ function serveDicomData(): Plugin {
               : 'application/dicom';
           res.setHeader('Content-Type', contentType);
           res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
           const stream = fs.createReadStream(filePath);
           stream.pipe(res);
         } else {
@@ -52,7 +53,11 @@ export default defineConfig({
   base: process.env.VITE_BASE_PATH || '/',
   // WASM support for cornerstone codecs
   optimizeDeps: {
-    exclude: ['@cornerstonejs/dicom-image-loader'],
+    exclude: [
+      '@cornerstonejs/core',
+      '@cornerstonejs/dicom-image-loader',
+      '@cornerstonejs/tools',
+    ],
   },
   worker: {
     format: 'es',
@@ -61,6 +66,7 @@ export default defineConfig({
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Resource-Policy': 'same-origin',
     },
   },
 });

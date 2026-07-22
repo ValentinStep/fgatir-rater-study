@@ -6,7 +6,7 @@
  */
 
 import * as cornerstone from '@cornerstonejs/core';
-import { init as dicomImageLoaderInit } from '@cornerstonejs/dicom-image-loader';
+import cornerstoneDICOMImageLoader from '@cornerstonejs/dicom-image-loader';
 
 let initPromise: Promise<void> | null = null;
 let initError: Error | null = null;
@@ -26,20 +26,22 @@ export function initCornerstone(): Promise<void> {
 
 async function doInit(): Promise<void> {
   try {
-    // Initialize cornerstone core
-    cornerstone.init();
+    console.log('[Cornerstone] Starting core init...');
+    await cornerstone.init();
+    console.log('[Cornerstone] Core init complete.');
 
-    // Initialize the DICOM image loader
-    // In Cornerstone v5, the image loader is initialized via its init() function
-    dicomImageLoaderInit({
+    console.log('[Cornerstone] Starting DICOM image loader init...');
+    cornerstoneDICOMImageLoader.init({
       maxWebWorkers: navigator.hardwareConcurrency || 4,
     });
+    console.log('[Cornerstone] DICOM image loader init complete.');
 
-    console.log('[Cornerstone] Initialization complete');
+    console.log('[Cornerstone] All initialization complete');
   } catch (error) {
     initError =
       error instanceof Error ? error : new Error(String(error));
     console.error('[Cornerstone] Initialization failed:', initError.message);
+    console.error('[Cornerstone] Stack:', initError.stack);
     throw initError;
   }
 }
