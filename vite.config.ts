@@ -52,12 +52,10 @@ export default defineConfig({
   // Configurable base path for deployment
   base: process.env.VITE_BASE_PATH || '/',
   // WASM support for cornerstone codecs
+  // Only exclude dicom-image-loader (needs raw ESM for Worker URL resolution).
+  // Core and tools MUST be prebundled so Vite handles CJS interop for fast-deep-equal etc.
   optimizeDeps: {
-    exclude: [
-      '@cornerstonejs/core',
-      '@cornerstonejs/dicom-image-loader',
-      '@cornerstonejs/tools',
-    ],
+    exclude: ['@cornerstonejs/dicom-image-loader'],
   },
   worker: {
     format: 'es',
