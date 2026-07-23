@@ -10,6 +10,7 @@ import { initCornerstone } from '@/cornerstone/initCornerstone';
 import { DicomViewport } from '@/components/DicomViewport/DicomViewport';
 import { DualDicomViewport } from '@/components/DualDicomViewport/DualDicomViewport';
 import { ViewerToolbar } from '@/components/ViewerToolbar/ViewerToolbar';
+import type { OrientationPlane } from '@/components/ViewerToolbar/ViewerToolbar';
 import { DiagnosticPanel } from '@/components/DiagnosticPanel/DiagnosticPanel';
 import { ProgressHeader } from '@/components/ProgressHeader/ProgressHeader';
 import { RatingForm } from '@/components/RatingForm/RatingForm';
@@ -60,6 +61,9 @@ function App() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [inProgressResponses, setInProgressResponses] = useState<RatingResponse[]>([]);
   const [viewportKey, setViewportKey] = useState(0);
+
+  // MPR orientation state (default: sagittal)
+  const [orientation, setOrientation] = useState<OrientationPlane>('sagittal');
 
   // Refs for duration tracking
   const itemOpenTimeRef = useRef<string | null>(null);
@@ -491,6 +495,8 @@ function App() {
             pairedViewportId={isSideBySide ? 'fgatir-right-viewport' : undefined}
             initialWindowCenter={windowCenter}
             initialWindowWidth={windowWidth}
+            orientation={orientation}
+            onOrientationChange={setOrientation}
           />
           <div style={contentAreaStyle}>
             <div style={viewportContainerStyle}>
@@ -501,6 +507,7 @@ function App() {
                   rightImageIds={rightImageIds}
                   initialWindowCenter={windowCenter}
                   initialWindowWidth={windowWidth}
+                  orientation={orientation}
                   onSliceChange={handleSliceChange}
                   onVoiChange={handleVoiChange}
                 />
@@ -510,6 +517,7 @@ function App() {
                   imageIds={imageIds}
                   initialWindowCenter={windowCenter}
                   initialWindowWidth={windowWidth}
+                  orientation={orientation}
                   onSliceChange={handleSliceChange}
                   onVoiChange={handleVoiChange}
                 />

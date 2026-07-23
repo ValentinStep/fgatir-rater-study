@@ -2,12 +2,19 @@
  * DualDicomViewport.tsx
  *
  * Side-by-side dual viewport component for paired comparison viewing.
- * Creates TWO Cornerstone stack viewports with synchronized scrolling and W/L.
- * Uses a shared RenderingEngine and @cornerstonejs/tools synchronizers.
+ * Uses Volume viewports with MPR support for multi-planar reconstruction.
+ * Synchronized scrolling, W/L, and zoom across both viewports.
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { RenderingEngine, Enums, type Types } from '@cornerstonejs/core';
+import {
+  RenderingEngine,
+  Enums,
+  volumeLoader,
+  cache,
+  utilities,
+  type Types,
+} from '@cornerstonejs/core';
 import {
   init as initTools,
   synchronizers as syncModule,
@@ -21,6 +28,8 @@ import {
   addTool,
 } from '@cornerstonejs/tools';
 
+export type OrientationPlane = 'sagittal' | 'axial' | 'coronal';
+
 export interface DualDicomViewportProps {
   /** Image IDs for the left viewport ("Image A") */
   leftImageIds: string[];
@@ -30,6 +39,8 @@ export interface DualDicomViewportProps {
   initialWindowCenter?: number;
   /** Initial window width for both viewports */
   initialWindowWidth?: number;
+  /** Current orientation plane */
+  orientation?: OrientationPlane;
   /** Callback when slice changes (from either viewport) */
   onSliceChange?: (currentSlice: number, totalSlices: number) => void;
   /** Callback when VOI changes (from either viewport) */
@@ -48,28 +59,30 @@ interface ViewportState {
 const RENDERING_ENGINE_ID = 'fgatir-dual-rendering-engine';
 const LEFT_VIEWPORT_ID = 'fgatir-left-viewport';
 const RIGHT_VIEWPORT_ID = 'fgatir-right-viewport';
-const SLICE_SYNC_ID = 'fgatir-slice-sync';
+const LEFT_VOLUME_ID = 'cornerstoneStreamingImageVolume:fgatir-left-volume';
+const RIGHT_VOLUME_ID = 'cornerstoneStreamingImageVolume:fgatir-right-volume';
 const VOI_SYNC_ID = 'fgatir-voi-sync';
 const ZOOM_SYNC_ID = 'fgatir-zoom-sync';
+const SLICE_SYNC_ID = 'fgatir-slice-sync';
 const DUAL_TOOL_GROUP_ID = 'fgatir-dual-tool-group';
 
 let toolsRegisteredForDual = false;
 
 function registerDualTools(): void {
   if (toolsRegisteredForDual) return;
-  try {
-    addTool(WindowLevelTool);
-  } catch { /* already registered */ }
-  try {
-    addTool(PanTool);
-  } catch { /* already registered */ }
-  try {
-    addTool(ZoomTool);
-  } catch { /* already registered */ }
-  try {
-    addTool(StackScrollTool);
-  } catch { /* already registered */ }
+  try { addTool(WindowLevelTool); } catch { /* already registered */ }
+  try { addTool(PanTool); } catch { /* already registered */ }
+  try { addTool(ZoomTool); } catch { /* already registered */ }
+  try { addTool(StackScrollTool); } catch { /* already registered */ }
   toolsRegisteredForDual = true;
+}
+
+function orientationToAxis(plane: OrientationPlane): Enums.OrientationAxis {
+  switch (plane) {
+    case 'axial': return Enums.OrientationAxis.AXIAL;
+    case 'coronal': return Enums.OrientationAxis.CORONAL;
+    case 'sagittal': return Enums.OrientationAxis.SAGITTAL;
+  }
 }
 
 export function DualDicomViewport({
@@ -77,14 +90,16 @@ export function DualDicomViewport({
   rightImageIds,
   initialWindowCenter,
   initialWindowWidth,
+  orientation = 'sagittal',
   onSliceChange,
   onVoiChange,
 }: DualDicomViewportProps) {
   const leftElementRef = useRef<HTMLDivElement>(null);
   const rightElementRef = useRef<HTMLDivElement>(null);
   const renderingEngineRef = useRef<RenderingEngine | null>(null);
-  const leftViewportRef = useRef<Types.IStackViewport | null>(null);
-  const rightViewportRef = useRef<Types.IStackViewport | null>(null);
+  const leftViewportRef = useRef<Types.IVolumeViewport | null>(null);
+  const rightViewportRef = useRef<Types.IVolumeViewport | null>(null);
+  const setupCompleteRef = useRef(false);
 
   const isEmpty = leftImageIds.length === 0 && rightImageIds.length === 0;
   const initialStatus = isEmpty ? 'empty' : 'loading';
@@ -97,7 +112,7 @@ export function DualDicomViewport({
     windowWidth: initialWindowWidth ?? 0,
   });
 
-  // Initialize both viewports
+  // Initialize both viewports with Volume rendering
   useEffect(() => {
     if (leftImageIds.length === 0 || rightImageIds.length === 0) return;
     if (!leftElementRef.current || !rightElementRef.current) return;
@@ -112,32 +127,39 @@ export function DualDicomViewport({
         initTools();
         registerDualTools();
 
-        // Create rendering engine (shared between both viewports)
+        // Clean up previous rendering engine
         let renderingEngine = renderingEngineRef.current;
         if (renderingEngine) {
           renderingEngine.destroy();
         }
+
+        // Remove old volumes from cache
+        try { cache.removeVolumeLoadObject(LEFT_VOLUME_ID); } catch { /* ok */ }
+        try { cache.removeVolumeLoadObject(RIGHT_VOLUME_ID); } catch { /* ok */ }
+
         renderingEngine = new RenderingEngine(RENDERING_ENGINE_ID);
         renderingEngineRef.current = renderingEngine;
 
         if (destroyed) return;
 
-        // Enable both viewports via setViewports (batch approach)
+        // Create both viewports as ORTHOGRAPHIC (volume) type
         const viewportInputs: Types.PublicViewportInput[] = [
           {
             viewportId: LEFT_VIEWPORT_ID,
-            type: Enums.ViewportType.STACK,
+            type: Enums.ViewportType.ORTHOGRAPHIC,
             element: leftElement,
             defaultOptions: {
               background: [0, 0, 0] as Types.Point3,
+              orientation: orientationToAxis(orientation),
             },
           },
           {
             viewportId: RIGHT_VIEWPORT_ID,
-            type: Enums.ViewportType.STACK,
+            type: Enums.ViewportType.ORTHOGRAPHIC,
             element: rightElement,
             defaultOptions: {
               background: [0, 0, 0] as Types.Point3,
+              orientation: orientationToAxis(orientation),
             },
           },
         ];
@@ -147,12 +169,8 @@ export function DualDicomViewport({
         if (destroyed) return;
 
         // Get viewport references
-        const leftViewport = renderingEngine.getViewport(
-          LEFT_VIEWPORT_ID,
-        ) as Types.IStackViewport;
-        const rightViewport = renderingEngine.getViewport(
-          RIGHT_VIEWPORT_ID,
-        ) as Types.IStackViewport;
+        const leftViewport = renderingEngine.getViewport(LEFT_VIEWPORT_ID) as Types.IVolumeViewport;
+        const rightViewport = renderingEngine.getViewport(RIGHT_VIEWPORT_ID) as Types.IVolumeViewport;
         leftViewportRef.current = leftViewport;
         rightViewportRef.current = rightViewport;
 
@@ -186,12 +204,36 @@ export function DualDicomViewport({
         toolGroup.addViewport(LEFT_VIEWPORT_ID, RENDERING_ENGINE_ID);
         toolGroup.addViewport(RIGHT_VIEWPORT_ID, RENDERING_ENGINE_ID);
 
-        // Set the stacks sequentially - each setStack resolves when metadata is ready
-        await leftViewport.setStack(leftImageIds, 0);
+        // Create volumes from image IDs
+        const leftVolume = await volumeLoader.createAndCacheVolumeFromImages(
+          LEFT_VOLUME_ID,
+          leftImageIds,
+        );
 
         if (destroyed) return;
 
-        await rightViewport.setStack(rightImageIds, 0);
+        const rightVolume = await volumeLoader.createAndCacheVolumeFromImages(
+          RIGHT_VOLUME_ID,
+          rightImageIds,
+        );
+
+        if (destroyed) return;
+
+        // Load volumes (fetches pixel data)
+        await leftVolume.load();
+
+        if (destroyed) return;
+
+        await rightVolume.load();
+
+        if (destroyed) return;
+
+        // Set volumes on viewports
+        await leftViewport.setVolumes([{ volumeId: LEFT_VOLUME_ID }]);
+
+        if (destroyed) return;
+
+        await rightViewport.setVolumes([{ volumeId: RIGHT_VOLUME_ID }]);
 
         if (destroyed) return;
 
@@ -205,73 +247,54 @@ export function DualDicomViewport({
           rightViewport.setProperties({ voiRange });
         }
 
-        // Force render on both viewports individually then together
+        // Force render
         leftViewport.render();
         rightViewport.render();
         renderingEngine.render();
 
-        // Set up synchronizers for linked scrolling, W/L, and zoom/pan
-        // Clean up existing synchronizers
+        // Set up synchronizers
+        // Clean up existing
         const existingSliceSync = SynchronizerManager.getSynchronizer(SLICE_SYNC_ID);
-        if (existingSliceSync) {
-          SynchronizerManager.destroySynchronizer(SLICE_SYNC_ID);
-        }
+        if (existingSliceSync) SynchronizerManager.destroySynchronizer(SLICE_SYNC_ID);
         const existingVoiSync = SynchronizerManager.getSynchronizer(VOI_SYNC_ID);
-        if (existingVoiSync) {
-          SynchronizerManager.destroySynchronizer(VOI_SYNC_ID);
-        }
+        if (existingVoiSync) SynchronizerManager.destroySynchronizer(VOI_SYNC_ID);
         const existingZoomSync = SynchronizerManager.getSynchronizer(ZOOM_SYNC_ID);
-        if (existingZoomSync) {
-          SynchronizerManager.destroySynchronizer(ZOOM_SYNC_ID);
-        }
+        if (existingZoomSync) SynchronizerManager.destroySynchronizer(ZOOM_SYNC_ID);
 
-        // Create image slice synchronizer (linked scrolling)
+        // Create slice synchronizer (scroll sync for volumes)
         const sliceSync = syncModule.createImageSliceSynchronizer(SLICE_SYNC_ID);
-        sliceSync.add({
-          renderingEngineId: RENDERING_ENGINE_ID,
-          viewportId: LEFT_VIEWPORT_ID,
-        });
-        sliceSync.add({
-          renderingEngineId: RENDERING_ENGINE_ID,
-          viewportId: RIGHT_VIEWPORT_ID,
-        });
+        sliceSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: LEFT_VIEWPORT_ID });
+        sliceSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: RIGHT_VIEWPORT_ID });
 
-        // Create VOI synchronizer (linked window/level)
+        // Create VOI synchronizer
         const voiSync = syncModule.createVOISynchronizer(VOI_SYNC_ID, {
           syncInvertState: true,
           syncColormap: true,
         });
-        voiSync.add({
-          renderingEngineId: RENDERING_ENGINE_ID,
-          viewportId: LEFT_VIEWPORT_ID,
-        });
-        voiSync.add({
-          renderingEngineId: RENDERING_ENGINE_ID,
-          viewportId: RIGHT_VIEWPORT_ID,
-        });
+        voiSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: LEFT_VIEWPORT_ID });
+        voiSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: RIGHT_VIEWPORT_ID });
 
-        // Create zoom/pan synchronizer (linked zoom and pan)
+        // Create zoom/pan synchronizer
         const zoomSync = syncModule.createZoomPanSynchronizer(ZOOM_SYNC_ID);
-        zoomSync.add({
-          renderingEngineId: RENDERING_ENGINE_ID,
-          viewportId: LEFT_VIEWPORT_ID,
-        });
-        zoomSync.add({
-          renderingEngineId: RENDERING_ENGINE_ID,
-          viewportId: RIGHT_VIEWPORT_ID,
-        });
+        zoomSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: LEFT_VIEWPORT_ID });
+        zoomSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: RIGHT_VIEWPORT_ID });
+
+        // Determine initial slice count
+        const numSlices = leftViewport.getNumberOfSlices();
+
+        setupCompleteRef.current = true;
 
         setState({
           status: 'ready',
-          currentSlice: 1,
-          totalSlices: leftImageIds.length,
+          currentSlice: Math.ceil(numSlices / 2),
+          totalSlices: numSlices,
           windowCenter: initialWindowCenter ?? 0,
           windowWidth: initialWindowWidth ?? 0,
         });
       } catch (error) {
         if (destroyed) return;
         const message = error instanceof Error ? error.message : String(error);
-        console.error('[DualDicomViewport] Setup failed:', message);
+        console.error('[DualDicomViewport] Setup failed:', message, error);
         setState((prev) => ({
           ...prev,
           status: 'error',
@@ -286,7 +309,7 @@ export function DualDicomViewport({
     const handleVoiModified = () => {
       if (destroyed || !leftViewportRef.current) return;
       const properties = leftViewportRef.current.getProperties();
-      const voiRange = properties.voiRange;
+      const voiRange = properties?.voiRange;
       if (voiRange) {
         const wc = (voiRange.lower + voiRange.upper) / 2;
         const ww = voiRange.upper - voiRange.lower;
@@ -299,59 +322,63 @@ export function DualDicomViewport({
       }
     };
 
-    // Manual scroll synchronization: when one viewport's image changes,
-    // sync the other viewport to the same slice index.
-    // This is a fallback/reinforcement for the Cornerstone synchronizer.
+    // Manual scroll synchronization for volume viewports
     let isSyncing = false;
 
-    const handleLeftNewImage = () => {
+    const handleLeftVolumeScroll = () => {
       if (destroyed || isSyncing || !leftViewportRef.current || !rightViewportRef.current) return;
-      const leftIndex = leftViewportRef.current.getCurrentImageIdIndex();
-      const rightIndex = rightViewportRef.current.getCurrentImageIdIndex();
+      const leftIndex = leftViewportRef.current.getSliceIndex();
+      const rightIndex = rightViewportRef.current.getSliceIndex();
       if (leftIndex !== rightIndex) {
         isSyncing = true;
-        rightViewportRef.current.setImageIdIndex(leftIndex);
+        const delta = leftIndex - rightIndex;
+        utilities.scroll(rightViewportRef.current! as any, { delta });
         isSyncing = false;
       }
       // Update UI state
+      const numSlices = leftViewportRef.current.getNumberOfSlices();
       setState((prev) => ({
         ...prev,
         currentSlice: leftIndex + 1,
+        totalSlices: numSlices,
       }));
-      onSliceChange?.(leftIndex + 1, leftImageIds.length);
+      onSliceChange?.(leftIndex + 1, numSlices);
     };
 
-    const handleRightNewImage = () => {
+    const handleRightVolumeScroll = () => {
       if (destroyed || isSyncing || !leftViewportRef.current || !rightViewportRef.current) return;
-      const rightIndex = rightViewportRef.current.getCurrentImageIdIndex();
-      const leftIndex = leftViewportRef.current.getCurrentImageIdIndex();
+      const rightIndex = rightViewportRef.current.getSliceIndex();
+      const leftIndex = leftViewportRef.current.getSliceIndex();
       if (rightIndex !== leftIndex) {
         isSyncing = true;
-        leftViewportRef.current.setImageIdIndex(rightIndex);
+        const delta = rightIndex - leftIndex;
+        utilities.scroll(leftViewportRef.current! as any, { delta });
         isSyncing = false;
       }
       // Update UI state
+      const numSlices = rightViewportRef.current.getNumberOfSlices();
       setState((prev) => ({
         ...prev,
         currentSlice: rightIndex + 1,
+        totalSlices: numSlices,
       }));
-      onSliceChange?.(rightIndex + 1, leftImageIds.length);
+      onSliceChange?.(rightIndex + 1, numSlices);
     };
 
-    // Listen on both elements for VOI changes
+    // Listen on both elements
     leftElement.addEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
     rightElement.addEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
-    // Listen for STACK_NEW_IMAGE for manual scroll sync
-    leftElement.addEventListener(Enums.Events.STACK_NEW_IMAGE, handleLeftNewImage);
-    rightElement.addEventListener(Enums.Events.STACK_NEW_IMAGE, handleRightNewImage);
+    leftElement.addEventListener(Enums.Events.VOLUME_NEW_IMAGE, handleLeftVolumeScroll);
+    rightElement.addEventListener(Enums.Events.VOLUME_NEW_IMAGE, handleRightVolumeScroll);
 
     return () => {
       destroyed = true;
+      setupCompleteRef.current = false;
 
       leftElement.removeEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
       rightElement.removeEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
-      leftElement.removeEventListener(Enums.Events.STACK_NEW_IMAGE, handleLeftNewImage);
-      rightElement.removeEventListener(Enums.Events.STACK_NEW_IMAGE, handleRightNewImage);
+      leftElement.removeEventListener(Enums.Events.VOLUME_NEW_IMAGE, handleLeftVolumeScroll);
+      rightElement.removeEventListener(Enums.Events.VOLUME_NEW_IMAGE, handleRightVolumeScroll);
 
       // Cleanup synchronizers
       const sliceSync = SynchronizerManager.getSynchronizer(SLICE_SYNC_ID);
@@ -365,6 +392,10 @@ export function DualDicomViewport({
       const tg = ToolGroupManager.getToolGroup(DUAL_TOOL_GROUP_ID);
       if (tg) ToolGroupManager.destroyToolGroup(DUAL_TOOL_GROUP_ID);
 
+      // Cleanup volumes from cache
+      try { cache.removeVolumeLoadObject(LEFT_VOLUME_ID); } catch { /* ok */ }
+      try { cache.removeVolumeLoadObject(RIGHT_VOLUME_ID); } catch { /* ok */ }
+
       // Cleanup rendering engine
       if (renderingEngineRef.current) {
         renderingEngineRef.current.destroy();
@@ -375,6 +406,31 @@ export function DualDicomViewport({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leftImageIds, rightImageIds]);
+
+  // Handle orientation changes
+  useEffect(() => {
+    if (!setupCompleteRef.current) return;
+    const leftVp = leftViewportRef.current;
+    const rightVp = rightViewportRef.current;
+    if (!leftVp || !rightVp) return;
+
+    const axis = orientationToAxis(orientation);
+    leftVp.setOrientation(axis);
+    rightVp.setOrientation(axis);
+
+    // Update slice count for new orientation
+    setTimeout(() => {
+      if (!leftViewportRef.current) return;
+      const numSlices = leftViewportRef.current.getNumberOfSlices();
+      const currentIndex = leftViewportRef.current.getSliceIndex();
+      setState((prev) => ({
+        ...prev,
+        currentSlice: currentIndex + 1,
+        totalSlices: numSlices,
+      }));
+      onSliceChange?.(currentIndex + 1, numSlices);
+    }, 100);
+  }, [orientation, onSliceChange]);
 
   // Prevent browser context menu on viewports
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -431,7 +487,7 @@ export function DualDicomViewport({
         <div className="viewport-overlay viewport-loading" style={overlayStyle}>
           <div style={{ textAlign: 'center', color: '#fff' }}>
             <div className="spinner" style={spinnerStyle} />
-            <p>Loading DICOM series...</p>
+            <p>Loading volume data...</p>
           </div>
         </div>
       )}
