@@ -65,10 +65,11 @@ The application will open at `http://localhost:5173`.
 
 ```
 src/
-├── app/                    # App entry component, initialization flow
+├── app/                    # App entry component, orientation state management
 ├── components/
-│   ├── DicomViewport/      # Cornerstone3D DICOM stack viewport
-│   ├── ViewerToolbar/      # W/L, zoom, scroll controls
+│   ├── DicomViewport/      # Sequential mode volume viewport with MPR
+│   ├── DualDicomViewport/  # Side-by-side dual volume viewports (synchronized)
+│   ├── ViewerToolbar/      # W/L, zoom, scroll, MPR plane selector controls
 │   ├── RatingForm/         # Likert-scale rating interface
 │   ├── ProgressHeader/     # Study progress indicator
 │   └── DiagnosticPanel/    # Dev/debug panel (Ctrl+Shift+D)
@@ -122,6 +123,46 @@ export const STUDY_CONFIG: StudyConfig = {
 - Synchronized scrolling (slice position) and W/L adjustments
 - Labels remain neutral ("Image Set A" / "Image Set B")
 - One rating form per subject (rates the pair together)
+
+## Multi-Planar Reconstruction (MPR)
+
+Both display modes support MPR — the ability to view the 3D volume in any of the three standard orthogonal planes:
+
+| Plane | Description | Keyboard Shortcut |
+|-------|-------------|-------------------|
+| **Axial** | Standard transverse cross-section (default) | — |
+| **Sagittal** | Left-right slice through the midline | — |
+| **Coronal** | Front-back slice through the volume | — |
+
+### How It Works
+
+The toolbar displays three plane selector buttons (**Ax**, **Sag**, **Cor**) with an active-state highlight. Clicking a plane button re-orients all active viewports simultaneously.
+
+**Technical implementation:**
+- DICOM images are loaded into Cornerstone3D **Volume Viewports** (`ViewportType.ORTHOGRAPHIC`) using [`volumeLoader.createAndCacheVolumeFromImages()`](src/components/DualDicomViewport/DualDicomViewport.tsx)
+- Plane switching calls `viewport.setOrientation(OrientationAxis)` which recalculates camera vectors for the selected plane
+- In side-by-side mode, both viewports share the same world coordinate space (same patient), enabling full camera synchronization via `CAMERA_MODIFIED` events
+- Scroll, zoom, and pan are all synchronized — interacting with either viewport mirrors the action on the other
+- Window/Level (VOI) adjustments are synchronized via `VOI_MODIFIED` events
+
+### Synchronization Architecture
+
+The dual viewport synchronization uses a manual event-based approach (not Cornerstone's built-in `SynchronizerManager`):
+
+```
+┌─────────────────┐    CAMERA_MODIFIED     ┌─────────────────┐
+│  Left Viewport  │ ─────────────────────► │  Right Viewport │
+│  (Volume A)     │ ◄───────────────────── │  (Volume B)     │
+└─────────────────┘    CAMERA_MODIFIED     └─────────────────┘
+        │                                          │
+        │           VOI_MODIFIED                   │
+        └──────────────────────────────────────────┘
+```
+
+- **`CAMERA_MODIFIED`** — fires on `viewport.element` whenever `setCamera()` is called (covers scroll, zoom, pan)
+- **`VOI_MODIFIED`** — fires when window/level changes
+- **Guard refs** (`isSyncingCameraRef`, `isSyncingVoiRef`) prevent infinite event loops
+- **`requestAnimationFrame`** releases guards after the render cycle completes
 
 ## Display Consistency Rules
 
