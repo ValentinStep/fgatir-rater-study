@@ -3,7 +3,8 @@
  *
  * Side-by-side dual viewport component for paired comparison viewing.
  * Uses Volume viewports with MPR support for multi-planar reconstruction.
- * Synchronized scrolling, W/L, and zoom across both viewports.
+ * All synchronization (scroll, W/L, zoom/pan) is manual to avoid conflicts
+ * between built-in synchronizers and different volume IDs.
  */
 
 import { useRef, useEffect, useState, useCallback } from 'react';
@@ -17,8 +18,6 @@ import {
 } from '@cornerstonejs/core';
 import {
   init as initTools,
-  synchronizers as syncModule,
-  SynchronizerManager,
   ToolGroupManager,
   WindowLevelTool,
   PanTool,
@@ -61,9 +60,6 @@ const LEFT_VIEWPORT_ID = 'fgatir-left-viewport';
 const RIGHT_VIEWPORT_ID = 'fgatir-right-viewport';
 const LEFT_VOLUME_ID = 'cornerstoneStreamingImageVolume:fgatir-left-volume';
 const RIGHT_VOLUME_ID = 'cornerstoneStreamingImageVolume:fgatir-right-volume';
-const VOI_SYNC_ID = 'fgatir-voi-sync';
-const ZOOM_SYNC_ID = 'fgatir-zoom-sync';
-const SLICE_SYNC_ID = 'fgatir-slice-sync';
 const DUAL_TOOL_GROUP_ID = 'fgatir-dual-tool-group';
 
 let toolsRegisteredForDual = false;
@@ -100,6 +96,11 @@ export function DualDicomViewport({
   const leftViewportRef = useRef<Types.IVolumeViewport | null>(null);
   const rightViewportRef = useRef<Types.IVolumeViewport | null>(null);
   const setupCompleteRef = useRef(false);
+
+  // Synchronization guards — use refs so event handlers always see current value
+  const isSyncingSliceRef = useRef(false);
+  const isSyncingVoiRef = useRef(false);
+  const isSyncingCameraRef = useRef(false);
 
   const isEmpty = leftImageIds.length === 0 && rightImageIds.length === 0;
   const initialStatus = isEmpty ? 'empty' : 'loading';
@@ -252,33 +253,6 @@ export function DualDicomViewport({
         rightViewport.render();
         renderingEngine.render();
 
-        // Set up synchronizers
-        // Clean up existing
-        const existingSliceSync = SynchronizerManager.getSynchronizer(SLICE_SYNC_ID);
-        if (existingSliceSync) SynchronizerManager.destroySynchronizer(SLICE_SYNC_ID);
-        const existingVoiSync = SynchronizerManager.getSynchronizer(VOI_SYNC_ID);
-        if (existingVoiSync) SynchronizerManager.destroySynchronizer(VOI_SYNC_ID);
-        const existingZoomSync = SynchronizerManager.getSynchronizer(ZOOM_SYNC_ID);
-        if (existingZoomSync) SynchronizerManager.destroySynchronizer(ZOOM_SYNC_ID);
-
-        // Create slice synchronizer (scroll sync for volumes)
-        const sliceSync = syncModule.createImageSliceSynchronizer(SLICE_SYNC_ID);
-        sliceSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: LEFT_VIEWPORT_ID });
-        sliceSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: RIGHT_VIEWPORT_ID });
-
-        // Create VOI synchronizer
-        const voiSync = syncModule.createVOISynchronizer(VOI_SYNC_ID, {
-          syncInvertState: true,
-          syncColormap: true,
-        });
-        voiSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: LEFT_VIEWPORT_ID });
-        voiSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: RIGHT_VIEWPORT_ID });
-
-        // Create zoom/pan synchronizer
-        const zoomSync = syncModule.createZoomPanSynchronizer(ZOOM_SYNC_ID);
-        zoomSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: LEFT_VIEWPORT_ID });
-        zoomSync.add({ renderingEngineId: RENDERING_ENGINE_ID, viewportId: RIGHT_VIEWPORT_ID });
-
         // Determine initial slice count
         const numSlices = leftViewport.getNumberOfSlices();
 
@@ -305,36 +279,26 @@ export function DualDicomViewport({
 
     setup();
 
-    // Event listeners for VOI and slice changes
-    const handleVoiModified = () => {
-      if (destroyed || !leftViewportRef.current) return;
-      const properties = leftViewportRef.current.getProperties();
-      const voiRange = properties?.voiRange;
-      if (voiRange) {
-        const wc = (voiRange.lower + voiRange.upper) / 2;
-        const ww = voiRange.upper - voiRange.lower;
-        setState((prev) => ({
-          ...prev,
-          windowCenter: Math.round(wc),
-          windowWidth: Math.round(ww),
-        }));
-        onVoiChange?.(Math.round(wc), Math.round(ww));
-      }
-    };
+    // ===== MANUAL SYNCHRONIZATION EVENT HANDLERS =====
 
-    // Manual scroll synchronization for volume viewports
-    let isSyncing = false;
-
+    // --- Slice synchronization via VOLUME_NEW_IMAGE ---
     const handleLeftVolumeScroll = () => {
-      if (destroyed || isSyncing || !leftViewportRef.current || !rightViewportRef.current) return;
+      if (destroyed || !leftViewportRef.current || !rightViewportRef.current) return;
+      if (isSyncingSliceRef.current) return;
+
       const leftIndex = leftViewportRef.current.getSliceIndex();
       const rightIndex = rightViewportRef.current.getSliceIndex();
+
       if (leftIndex !== rightIndex) {
-        isSyncing = true;
+        isSyncingSliceRef.current = true;
         const delta = leftIndex - rightIndex;
-        utilities.scroll(rightViewportRef.current! as any, { delta });
-        isSyncing = false;
+        utilities.scroll(rightViewportRef.current as any, { delta });
+        // Use requestAnimationFrame to release the guard after the sync event fires
+        requestAnimationFrame(() => {
+          isSyncingSliceRef.current = false;
+        });
       }
+
       // Update UI state
       const numSlices = leftViewportRef.current.getNumberOfSlices();
       setState((prev) => ({
@@ -346,15 +310,21 @@ export function DualDicomViewport({
     };
 
     const handleRightVolumeScroll = () => {
-      if (destroyed || isSyncing || !leftViewportRef.current || !rightViewportRef.current) return;
+      if (destroyed || !leftViewportRef.current || !rightViewportRef.current) return;
+      if (isSyncingSliceRef.current) return;
+
       const rightIndex = rightViewportRef.current.getSliceIndex();
       const leftIndex = leftViewportRef.current.getSliceIndex();
+
       if (rightIndex !== leftIndex) {
-        isSyncing = true;
+        isSyncingSliceRef.current = true;
         const delta = rightIndex - leftIndex;
-        utilities.scroll(leftViewportRef.current! as any, { delta });
-        isSyncing = false;
+        utilities.scroll(leftViewportRef.current as any, { delta });
+        requestAnimationFrame(() => {
+          isSyncingSliceRef.current = false;
+        });
       }
+
       // Update UI state
       const numSlices = rightViewportRef.current.getNumberOfSlices();
       setState((prev) => ({
@@ -365,28 +335,169 @@ export function DualDicomViewport({
       onSliceChange?.(rightIndex + 1, numSlices);
     };
 
-    // Listen on both elements
-    leftElement.addEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
-    rightElement.addEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
+    // --- VOI synchronization via VOI_MODIFIED ---
+    const handleLeftVoiModified = () => {
+      if (destroyed || !leftViewportRef.current || !rightViewportRef.current) return;
+      if (isSyncingVoiRef.current) return;
+
+      const properties = leftViewportRef.current.getProperties();
+      const voiRange = properties?.voiRange;
+      if (voiRange) {
+        isSyncingVoiRef.current = true;
+        rightViewportRef.current.setProperties({ voiRange });
+        rightViewportRef.current.render();
+        requestAnimationFrame(() => {
+          isSyncingVoiRef.current = false;
+        });
+
+        const wc = Math.round((voiRange.lower + voiRange.upper) / 2);
+        const ww = Math.round(voiRange.upper - voiRange.lower);
+        setState((prev) => ({ ...prev, windowCenter: wc, windowWidth: ww }));
+        onVoiChange?.(wc, ww);
+      }
+    };
+
+    const handleRightVoiModified = () => {
+      if (destroyed || !leftViewportRef.current || !rightViewportRef.current) return;
+      if (isSyncingVoiRef.current) return;
+
+      const properties = rightViewportRef.current.getProperties();
+      const voiRange = properties?.voiRange;
+      if (voiRange) {
+        isSyncingVoiRef.current = true;
+        leftViewportRef.current.setProperties({ voiRange });
+        leftViewportRef.current.render();
+        requestAnimationFrame(() => {
+          isSyncingVoiRef.current = false;
+        });
+
+        const wc = Math.round((voiRange.lower + voiRange.upper) / 2);
+        const ww = Math.round(voiRange.upper - voiRange.lower);
+        setState((prev) => ({ ...prev, windowCenter: wc, windowWidth: ww }));
+        onVoiChange?.(wc, ww);
+      }
+    };
+
+    // --- Camera (zoom/pan) synchronization via CAMERA_MODIFIED ---
+    // We sync parallelScale (zoom) and camera position offset relative to focal point (pan).
+    // We do NOT sync focalPoint directly since it includes the slice position.
+    const handleLeftCameraModified = () => {
+      if (destroyed || !leftViewportRef.current || !rightViewportRef.current) return;
+      if (isSyncingCameraRef.current) return;
+
+      const leftCamera = leftViewportRef.current.getCamera();
+      const rightCamera = rightViewportRef.current.getCamera();
+
+      // Check if zoom changed
+      const zoomChanged = leftCamera.parallelScale !== rightCamera.parallelScale;
+
+      // Check if pan changed (position relative to focal point)
+      const leftPanX = (leftCamera.position?.[0] ?? 0) - (leftCamera.focalPoint?.[0] ?? 0);
+      const leftPanY = (leftCamera.position?.[1] ?? 0) - (leftCamera.focalPoint?.[1] ?? 0);
+      const leftPanZ = (leftCamera.position?.[2] ?? 0) - (leftCamera.focalPoint?.[2] ?? 0);
+      const rightPanX = (rightCamera.position?.[0] ?? 0) - (rightCamera.focalPoint?.[0] ?? 0);
+      const rightPanY = (rightCamera.position?.[1] ?? 0) - (rightCamera.focalPoint?.[1] ?? 0);
+      const rightPanZ = (rightCamera.position?.[2] ?? 0) - (rightCamera.focalPoint?.[2] ?? 0);
+
+      const panChanged =
+        Math.abs(leftPanX - rightPanX) > 0.001 ||
+        Math.abs(leftPanY - rightPanY) > 0.001 ||
+        Math.abs(leftPanZ - rightPanZ) > 0.001;
+
+      if (!zoomChanged && !panChanged) return;
+
+      isSyncingCameraRef.current = true;
+
+      // Apply zoom
+      const cameraUpdate: Partial<Types.ICamera> = {};
+      if (zoomChanged) {
+        cameraUpdate.parallelScale = leftCamera.parallelScale;
+      }
+
+      // Apply pan: maintain same offset from focal point -> position
+      if (panChanged && rightCamera.focalPoint && rightCamera.position) {
+        cameraUpdate.position = [
+          rightCamera.focalPoint[0] + leftPanX,
+          rightCamera.focalPoint[1] + leftPanY,
+          rightCamera.focalPoint[2] + leftPanZ,
+        ] as Types.Point3;
+      }
+
+      rightViewportRef.current.setCamera(cameraUpdate);
+      rightViewportRef.current.render();
+
+      requestAnimationFrame(() => {
+        isSyncingCameraRef.current = false;
+      });
+    };
+
+    const handleRightCameraModified = () => {
+      if (destroyed || !leftViewportRef.current || !rightViewportRef.current) return;
+      if (isSyncingCameraRef.current) return;
+
+      const rightCamera = rightViewportRef.current.getCamera();
+      const leftCamera = leftViewportRef.current.getCamera();
+
+      // Check if zoom changed
+      const zoomChanged = rightCamera.parallelScale !== leftCamera.parallelScale;
+
+      // Check if pan changed
+      const rightPanX = (rightCamera.position?.[0] ?? 0) - (rightCamera.focalPoint?.[0] ?? 0);
+      const rightPanY = (rightCamera.position?.[1] ?? 0) - (rightCamera.focalPoint?.[1] ?? 0);
+      const rightPanZ = (rightCamera.position?.[2] ?? 0) - (rightCamera.focalPoint?.[2] ?? 0);
+      const leftPanX = (leftCamera.position?.[0] ?? 0) - (leftCamera.focalPoint?.[0] ?? 0);
+      const leftPanY = (leftCamera.position?.[1] ?? 0) - (leftCamera.focalPoint?.[1] ?? 0);
+      const leftPanZ = (leftCamera.position?.[2] ?? 0) - (leftCamera.focalPoint?.[2] ?? 0);
+
+      const panChanged =
+        Math.abs(rightPanX - leftPanX) > 0.001 ||
+        Math.abs(rightPanY - leftPanY) > 0.001 ||
+        Math.abs(rightPanZ - leftPanZ) > 0.001;
+
+      if (!zoomChanged && !panChanged) return;
+
+      isSyncingCameraRef.current = true;
+
+      const cameraUpdate: Partial<Types.ICamera> = {};
+      if (zoomChanged) {
+        cameraUpdate.parallelScale = rightCamera.parallelScale;
+      }
+
+      if (panChanged && leftCamera.focalPoint && leftCamera.position) {
+        cameraUpdate.position = [
+          leftCamera.focalPoint[0] + rightPanX,
+          leftCamera.focalPoint[1] + rightPanY,
+          leftCamera.focalPoint[2] + rightPanZ,
+        ] as Types.Point3;
+      }
+
+      leftViewportRef.current.setCamera(cameraUpdate);
+      leftViewportRef.current.render();
+
+      requestAnimationFrame(() => {
+        isSyncingCameraRef.current = false;
+      });
+    };
+
+    // --- Register all event listeners ---
     leftElement.addEventListener(Enums.Events.VOLUME_NEW_IMAGE, handleLeftVolumeScroll);
     rightElement.addEventListener(Enums.Events.VOLUME_NEW_IMAGE, handleRightVolumeScroll);
+    leftElement.addEventListener(Enums.Events.VOI_MODIFIED, handleLeftVoiModified);
+    rightElement.addEventListener(Enums.Events.VOI_MODIFIED, handleRightVoiModified);
+    leftElement.addEventListener(Enums.Events.CAMERA_MODIFIED, handleLeftCameraModified);
+    rightElement.addEventListener(Enums.Events.CAMERA_MODIFIED, handleRightCameraModified);
 
     return () => {
       destroyed = true;
       setupCompleteRef.current = false;
 
-      leftElement.removeEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
-      rightElement.removeEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
+      // Remove all event listeners
       leftElement.removeEventListener(Enums.Events.VOLUME_NEW_IMAGE, handleLeftVolumeScroll);
       rightElement.removeEventListener(Enums.Events.VOLUME_NEW_IMAGE, handleRightVolumeScroll);
-
-      // Cleanup synchronizers
-      const sliceSync = SynchronizerManager.getSynchronizer(SLICE_SYNC_ID);
-      if (sliceSync) SynchronizerManager.destroySynchronizer(SLICE_SYNC_ID);
-      const voiSync = SynchronizerManager.getSynchronizer(VOI_SYNC_ID);
-      if (voiSync) SynchronizerManager.destroySynchronizer(VOI_SYNC_ID);
-      const zoomSync = SynchronizerManager.getSynchronizer(ZOOM_SYNC_ID);
-      if (zoomSync) SynchronizerManager.destroySynchronizer(ZOOM_SYNC_ID);
+      leftElement.removeEventListener(Enums.Events.VOI_MODIFIED, handleLeftVoiModified);
+      rightElement.removeEventListener(Enums.Events.VOI_MODIFIED, handleRightVoiModified);
+      leftElement.removeEventListener(Enums.Events.CAMERA_MODIFIED, handleLeftCameraModified);
+      rightElement.removeEventListener(Enums.Events.CAMERA_MODIFIED, handleRightCameraModified);
 
       // Cleanup tool group
       const tg = ToolGroupManager.getToolGroup(DUAL_TOOL_GROUP_ID);
