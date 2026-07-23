@@ -50,6 +50,7 @@ const LEFT_VIEWPORT_ID = 'fgatir-left-viewport';
 const RIGHT_VIEWPORT_ID = 'fgatir-right-viewport';
 const SLICE_SYNC_ID = 'fgatir-slice-sync';
 const VOI_SYNC_ID = 'fgatir-voi-sync';
+const ZOOM_SYNC_ID = 'fgatir-zoom-sync';
 const DUAL_TOOL_GROUP_ID = 'fgatir-dual-tool-group';
 
 let toolsRegisteredForDual = false;
@@ -209,7 +210,7 @@ export function DualDicomViewport({
         rightViewport.render();
         renderingEngine.render();
 
-        // Set up synchronizers for linked scrolling and W/L
+        // Set up synchronizers for linked scrolling, W/L, and zoom/pan
         // Clean up existing synchronizers
         const existingSliceSync = SynchronizerManager.getSynchronizer(SLICE_SYNC_ID);
         if (existingSliceSync) {
@@ -218,6 +219,10 @@ export function DualDicomViewport({
         const existingVoiSync = SynchronizerManager.getSynchronizer(VOI_SYNC_ID);
         if (existingVoiSync) {
           SynchronizerManager.destroySynchronizer(VOI_SYNC_ID);
+        }
+        const existingZoomSync = SynchronizerManager.getSynchronizer(ZOOM_SYNC_ID);
+        if (existingZoomSync) {
+          SynchronizerManager.destroySynchronizer(ZOOM_SYNC_ID);
         }
 
         // Create image slice synchronizer (linked scrolling)
@@ -245,6 +250,17 @@ export function DualDicomViewport({
           viewportId: RIGHT_VIEWPORT_ID,
         });
 
+        // Create zoom/pan synchronizer (linked zoom and pan)
+        const zoomSync = syncModule.createZoomPanSynchronizer(ZOOM_SYNC_ID);
+        zoomSync.add({
+          renderingEngineId: RENDERING_ENGINE_ID,
+          viewportId: LEFT_VIEWPORT_ID,
+        });
+        zoomSync.add({
+          renderingEngineId: RENDERING_ENGINE_ID,
+          viewportId: RIGHT_VIEWPORT_ID,
+        });
+
         setState({
           status: 'ready',
           currentSlice: 1,
@@ -266,7 +282,7 @@ export function DualDicomViewport({
 
     setup();
 
-    // Event listeners for VOI and slice changes (listen on left element as source of truth)
+    // Event listeners for VOI and slice changes
     const handleVoiModified = () => {
       if (destroyed || !leftViewportRef.current) return;
       const properties = leftViewportRef.current.getProperties();
@@ -283,36 +299,67 @@ export function DualDicomViewport({
       }
     };
 
-    const handleStackScroll = () => {
-      if (destroyed || !leftViewportRef.current) return;
-      const currentIndex = leftViewportRef.current.getCurrentImageIdIndex();
-      const newSlice = currentIndex + 1;
+    // Manual scroll synchronization: when one viewport's image changes,
+    // sync the other viewport to the same slice index.
+    // This is a fallback/reinforcement for the Cornerstone synchronizer.
+    let isSyncing = false;
+
+    const handleLeftNewImage = () => {
+      if (destroyed || isSyncing || !leftViewportRef.current || !rightViewportRef.current) return;
+      const leftIndex = leftViewportRef.current.getCurrentImageIdIndex();
+      const rightIndex = rightViewportRef.current.getCurrentImageIdIndex();
+      if (leftIndex !== rightIndex) {
+        isSyncing = true;
+        rightViewportRef.current.setImageIdIndex(leftIndex);
+        isSyncing = false;
+      }
+      // Update UI state
       setState((prev) => ({
         ...prev,
-        currentSlice: newSlice,
+        currentSlice: leftIndex + 1,
       }));
-      onSliceChange?.(newSlice, leftImageIds.length);
+      onSliceChange?.(leftIndex + 1, leftImageIds.length);
+    };
+
+    const handleRightNewImage = () => {
+      if (destroyed || isSyncing || !leftViewportRef.current || !rightViewportRef.current) return;
+      const rightIndex = rightViewportRef.current.getCurrentImageIdIndex();
+      const leftIndex = leftViewportRef.current.getCurrentImageIdIndex();
+      if (rightIndex !== leftIndex) {
+        isSyncing = true;
+        leftViewportRef.current.setImageIdIndex(rightIndex);
+        isSyncing = false;
+      }
+      // Update UI state
+      setState((prev) => ({
+        ...prev,
+        currentSlice: rightIndex + 1,
+      }));
+      onSliceChange?.(rightIndex + 1, leftImageIds.length);
     };
 
     // Listen on both elements for VOI changes
     leftElement.addEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
     rightElement.addEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
-    leftElement.addEventListener(Enums.Events.STACK_VIEWPORT_SCROLL, handleStackScroll);
-    rightElement.addEventListener(Enums.Events.STACK_VIEWPORT_SCROLL, handleStackScroll);
+    // Listen for STACK_NEW_IMAGE for manual scroll sync
+    leftElement.addEventListener(Enums.Events.STACK_NEW_IMAGE, handleLeftNewImage);
+    rightElement.addEventListener(Enums.Events.STACK_NEW_IMAGE, handleRightNewImage);
 
     return () => {
       destroyed = true;
 
       leftElement.removeEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
       rightElement.removeEventListener(Enums.Events.VOI_MODIFIED, handleVoiModified);
-      leftElement.removeEventListener(Enums.Events.STACK_VIEWPORT_SCROLL, handleStackScroll);
-      rightElement.removeEventListener(Enums.Events.STACK_VIEWPORT_SCROLL, handleStackScroll);
+      leftElement.removeEventListener(Enums.Events.STACK_NEW_IMAGE, handleLeftNewImage);
+      rightElement.removeEventListener(Enums.Events.STACK_NEW_IMAGE, handleRightNewImage);
 
       // Cleanup synchronizers
       const sliceSync = SynchronizerManager.getSynchronizer(SLICE_SYNC_ID);
       if (sliceSync) SynchronizerManager.destroySynchronizer(SLICE_SYNC_ID);
       const voiSync = SynchronizerManager.getSynchronizer(VOI_SYNC_ID);
       if (voiSync) SynchronizerManager.destroySynchronizer(VOI_SYNC_ID);
+      const zoomSync = SynchronizerManager.getSynchronizer(ZOOM_SYNC_ID);
+      if (zoomSync) SynchronizerManager.destroySynchronizer(ZOOM_SYNC_ID);
 
       // Cleanup tool group
       const tg = ToolGroupManager.getToolGroup(DUAL_TOOL_GROUP_ID);

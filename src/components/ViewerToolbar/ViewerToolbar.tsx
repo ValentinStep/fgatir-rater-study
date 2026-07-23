@@ -20,6 +20,8 @@ export interface ViewerToolbarProps {
   windowWidth: number;
   renderingEngineId: string;
   viewportId: string;
+  /** Optional paired viewport ID for synchronized dual-viewport mode */
+  pairedViewportId?: string;
   initialWindowCenter?: number;
   initialWindowWidth?: number;
 }
@@ -31,31 +33,48 @@ export function ViewerToolbar({
   windowWidth,
   renderingEngineId,
   viewportId,
+  pairedViewportId,
   initialWindowCenter = 21,
   initialWindowWidth = 54,
 }: ViewerToolbarProps) {
+  /** Get the primary viewport */
   const getViewport = useCallback((): Types.IStackViewport | null => {
     const engine = getRenderingEngine(renderingEngineId);
     if (!engine) return null;
     return engine.getViewport(viewportId) as Types.IStackViewport;
   }, [renderingEngineId, viewportId]);
 
+  /** Get the paired viewport (if in dual mode) */
+  const getPairedViewport = useCallback((): Types.IStackViewport | null => {
+    if (!pairedViewportId) return null;
+    const engine = getRenderingEngine(renderingEngineId);
+    if (!engine) return null;
+    return engine.getViewport(pairedViewportId) as Types.IStackViewport;
+  }, [renderingEngineId, pairedViewportId]);
+
   const handleReset = useCallback(() => {
     const viewport = getViewport();
     if (!viewport) return;
 
-    // Reset window/level
-    viewport.setProperties({
-      voiRange: {
-        lower: initialWindowCenter - initialWindowWidth / 2,
-        upper: initialWindowCenter + initialWindowWidth / 2,
-      },
-    });
+    const voiRange = {
+      lower: initialWindowCenter - initialWindowWidth / 2,
+      upper: initialWindowCenter + initialWindowWidth / 2,
+    };
 
+    // Reset window/level
+    viewport.setProperties({ voiRange });
     // Reset camera (zoom, pan)
     viewport.resetCamera();
     viewport.render();
-  }, [getViewport, initialWindowCenter, initialWindowWidth]);
+
+    // Apply to paired viewport as well
+    const paired = getPairedViewport();
+    if (paired) {
+      paired.setProperties({ voiRange });
+      paired.resetCamera();
+      paired.render();
+    }
+  }, [getViewport, getPairedViewport, initialWindowCenter, initialWindowWidth]);
 
   const handleZoomIn = useCallback(() => {
     const viewport = getViewport();
@@ -64,7 +83,14 @@ export function ViewerToolbar({
     const zoom = (camera.parallelScale ?? 1) * 0.8;
     viewport.setCamera({ parallelScale: zoom });
     viewport.render();
-  }, [getViewport]);
+
+    // Sync zoom to paired viewport
+    const paired = getPairedViewport();
+    if (paired) {
+      paired.setCamera({ parallelScale: zoom });
+      paired.render();
+    }
+  }, [getViewport, getPairedViewport]);
 
   const handleZoomOut = useCallback(() => {
     const viewport = getViewport();
@@ -73,7 +99,14 @@ export function ViewerToolbar({
     const zoom = (camera.parallelScale ?? 1) * 1.25;
     viewport.setCamera({ parallelScale: zoom });
     viewport.render();
-  }, [getViewport]);
+
+    // Sync zoom to paired viewport
+    const paired = getPairedViewport();
+    if (paired) {
+      paired.setCamera({ parallelScale: zoom });
+      paired.render();
+    }
+  }, [getViewport, getPairedViewport]);
 
   const handleSliceChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,21 +114,39 @@ export function ViewerToolbar({
       if (!viewport) return;
       const newIndex = parseInt(e.target.value, 10) - 1;
       viewport.setImageIdIndex(newIndex);
+
+      // Sync slice to paired viewport
+      const paired = getPairedViewport();
+      if (paired) {
+        paired.setImageIdIndex(newIndex);
+      }
     },
-    [getViewport],
+    [getViewport, getPairedViewport],
   );
 
   const handleFirstSlice = useCallback(() => {
     const viewport = getViewport();
     if (!viewport) return;
     viewport.setImageIdIndex(0);
-  }, [getViewport]);
+
+    // Sync to paired viewport
+    const paired = getPairedViewport();
+    if (paired) {
+      paired.setImageIdIndex(0);
+    }
+  }, [getViewport, getPairedViewport]);
 
   const handleLastSlice = useCallback(() => {
     const viewport = getViewport();
     if (!viewport) return;
     viewport.setImageIdIndex(totalSlices - 1);
-  }, [getViewport, totalSlices]);
+
+    // Sync to paired viewport
+    const paired = getPairedViewport();
+    if (paired) {
+      paired.setImageIdIndex(totalSlices - 1);
+    }
+  }, [getViewport, getPairedViewport, totalSlices]);
 
   return (
     <div className="viewer-toolbar" style={toolbarStyle}>

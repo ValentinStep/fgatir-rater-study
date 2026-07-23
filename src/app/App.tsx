@@ -488,6 +488,7 @@ function App() {
             windowWidth={windowWidth}
             renderingEngineId={isSideBySide ? 'fgatir-dual-rendering-engine' : RENDERING_ENGINE_ID}
             viewportId={isSideBySide ? 'fgatir-left-viewport' : VIEWPORT_ID}
+            pairedViewportId={isSideBySide ? 'fgatir-right-viewport' : undefined}
             initialWindowCenter={windowCenter}
             initialWindowWidth={windowWidth}
           />
