@@ -85,16 +85,53 @@ public/                     # Static assets
 docs/                       # Deployment and operational docs
 ```
 
+## Display Modes
+
+The application supports two display modes, controlled by a single config flag in [`src/config/studyConfig.ts`](src/config/studyConfig.ts):
+
+```typescript
+// src/config/studyConfig.ts
+export const STUDY_CONFIG: StudyConfig = {
+  displayMode: 'sequential',  // or 'sideBySide'
+  // ...
+};
+```
+
+### Switching Between Modes
+
+| Mode | Value | Use Case |
+|------|-------|----------|
+| Sequential (blinded) | `'sequential'` | Real study — one series at a time, fully blinded |
+| Side-by-side | `'sideBySide'` | Demo/presentation — both series visible simultaneously |
+
+**To switch:**
+1. Open `src/config/studyConfig.ts`
+2. Change the `displayMode` value to `'sequential'` or `'sideBySide'`
+3. Save the file — Vite hot-reloads automatically (or restart `npm run dev`)
+4. Clear localStorage (`localStorage.clear()` in browser console) to reset study progress
+
+### Sequential Mode (`'sequential'`)
+- One series displayed at a time in a single viewport
+- Each series is a separate assignment; rater scores them independently
+- Series order is randomized per subject (blinding preserved)
+- Neutral labeling: "Image set 1", "Image set 2", etc.
+
+### Side-by-Side Mode (`'sideBySide'`)
+- Two viewports shown simultaneously for the same subject
+- Left viewport: first series; Right viewport: second series
+- Synchronized scrolling (slice position) and W/L adjustments
+- Labels remain neutral ("Image Set A" / "Image Set B")
+- One rating form per subject (rates the pair together)
+
 ## Display Consistency Rules
 
-To ensure valid blinded comparisons, the application enforces strict display consistency:
+Regardless of display mode, the application enforces strict display consistency:
 
-1. **Single viewport** — one series displayed at a time (not side-by-side)
-2. **Identical window settings** — W/L values from the manifest are applied consistently
-3. **No annotations leaked** — SeriesDescription and condition labels are stripped
-4. **Neutral labeling** — series are labeled "Image set 1", "Image set 2", etc.
-5. **Consistent rendering** — same Cornerstone3D pipeline for all images
-6. **No viewport manipulation history** — viewport resets between series
+1. **Identical window settings** — W/L values from the manifest are applied consistently
+2. **No annotations leaked** — SeriesDescription and condition labels are stripped
+3. **Neutral labeling** — series are never identified as "original" or "denoised"
+4. **Consistent rendering** — same Cornerstone3D pipeline for all images
+5. **No viewport manipulation history** — viewport resets between assignments
 
 ## Deployment Targets
 
