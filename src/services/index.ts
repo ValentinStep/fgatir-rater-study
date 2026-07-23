@@ -30,6 +30,7 @@ export {
 export {
   SessionService,
   buildAssignments,
+  buildPairedAssignments,
 } from './sessionService';
 
 export { SupabaseImageSource } from './supabaseImageSource';

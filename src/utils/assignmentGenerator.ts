@@ -12,6 +12,7 @@ import type {
   StudyManifest,
   RandomizationConfig,
   RandomizedAssignment,
+  PairedAssignment,
 } from '@/types';
 import { createRng, seededShuffle, antiConsecutiveOrder } from './randomization';
 
@@ -90,6 +91,55 @@ export function generateAssignments(
     presentationOrder: index,
     displayLabel: `Image set ${index + 1}`,
   }));
+
+  return assignments;
+}
+
+/**
+ * Generate paired assignments for side-by-side mode.
+ * Each assignment represents one subject with two series (randomized left/right).
+ *
+ * Algorithm:
+ * 1. Collect subjects from the manifest
+ * 2. Shuffle subject order deterministically
+ * 3. For each subject, randomize which series is left vs right (blinded)
+ * 4. Assign presentation order and neutral display labels
+ *
+ * @param manifest - The study manifest (blinded, no condition info)
+ * @param config - Randomization config with seed and raterId
+ * @returns Array of PairedAssignment (blinded, no condition exposed)
+ */
+export function generatePairedAssignments(
+  manifest: StudyManifest,
+  config: RandomizationConfig,
+): PairedAssignment[] {
+  const rng = createRng(config);
+
+  // Collect subjects with their series
+  const subjects = manifest.cases.map((caseEntry) => ({
+    subjectId: caseEntry.subjectId,
+    seriesIds: caseEntry.series.map((s) => s.seriesId),
+  }));
+
+  // Shuffle subject order
+  seededShuffle(subjects, rng);
+
+  // Build paired assignments
+  const assignments: PairedAssignment[] = subjects.map((subject, index) => {
+    const seriesIds = [...subject.seriesIds];
+    // Randomize left/right assignment (blinded)
+    seededShuffle(seriesIds, rng);
+
+    return {
+      id: `${config.raterId}_pair_${subject.subjectId}_${index}`,
+      raterId: config.raterId,
+      subjectId: subject.subjectId,
+      leftSeriesId: seriesIds[0]!,
+      rightSeriesId: seriesIds[1] ?? seriesIds[0]!, // fallback if only 1 series
+      presentationOrder: index,
+      displayLabel: `Comparison ${index + 1}`,
+    };
+  });
 
   return assignments;
 }

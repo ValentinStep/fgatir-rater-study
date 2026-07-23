@@ -7,6 +7,7 @@
 
 import type {
   Assignment,
+  PairedAssignment,
   SessionState,
   RatingResponse,
   StudyManifest,
@@ -14,13 +15,13 @@ import type {
   RandomizedAssignment,
 } from '@/types';
 import { getRatingService } from './ratingService';
-import { generateAssignments } from '@/utils/assignmentGenerator';
+import { generateAssignments, generatePairedAssignments } from '@/utils/assignmentGenerator';
 import { STUDY_CONFIG } from '@/config/studyConfig';
 
 // --- Build assignments from manifest ---
 
 /**
- * Build a randomized list of assignments from the manifest.
+ * Build a randomized list of assignments from the manifest (sequential mode).
  * Uses deterministic seeded randomization for reproducibility.
  *
  * @param manifest - Study manifest (blinded, no condition info)
@@ -48,6 +49,27 @@ export function buildAssignments(
     presentationOrder: ra.presentationOrder,
     displayLabel: ra.displayLabel,
   }));
+}
+
+/**
+ * Build paired assignments for side-by-side mode.
+ * Each assignment represents one subject with two series for comparison.
+ *
+ * @param manifest - Study manifest (blinded, no condition info)
+ * @param raterId - Unique rater identifier
+ * @param seed - Optional override seed (defaults to STUDY_CONFIG.randomizationSeed)
+ */
+export function buildPairedAssignments(
+  manifest: StudyManifest,
+  raterId: string,
+  seed?: string,
+): PairedAssignment[] {
+  const config: RandomizationConfig = {
+    seed: seed ?? STUDY_CONFIG.randomizationSeed,
+    raterId,
+  };
+
+  return generatePairedAssignments(manifest, config);
 }
 
 // --- Session Service Class ---

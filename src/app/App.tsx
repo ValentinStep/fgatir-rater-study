@@ -2,24 +2,27 @@
  * Main application component.
  * Integrates the DICOM viewer with rating workflow.
  * Manages series navigation, session state, and unsaved changes warnings.
+ * Supports both sequential (single viewport) and side-by-side (dual viewport) modes.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { initCornerstone } from '@/cornerstone/initCornerstone';
 import { DicomViewport } from '@/components/DicomViewport/DicomViewport';
+import { DualDicomViewport } from '@/components/DualDicomViewport/DualDicomViewport';
 import { ViewerToolbar } from '@/components/ViewerToolbar/ViewerToolbar';
 import { DiagnosticPanel } from '@/components/DiagnosticPanel/DiagnosticPanel';
 import { ProgressHeader } from '@/components/ProgressHeader/ProgressHeader';
 import { RatingForm } from '@/components/RatingForm/RatingForm';
 import { getImageSource } from '@/services/imageSource';
 import { getRatingService } from '@/services/ratingService';
-import { SessionService, buildAssignments } from '@/services/sessionService';
+import { SessionService, buildAssignments, buildPairedAssignments } from '@/services/sessionService';
 import { STUDY_CONFIG } from '@/config/studyConfig';
 import type {
   RatingResponse,
   RatingSubmission,
   SessionState,
   Assignment,
+  PairedAssignment,
   ViewerStateSnapshot,
 } from '@/types';
 import type { StudyManifest } from '@/services/imageSource';
@@ -42,10 +45,16 @@ function App() {
   const [currentSlice, setCurrentSlice] = useState(1);
   const [totalSlices, setTotalSlices] = useState(0);
 
+  // Side-by-side mode state
+  const [leftImageIds, setLeftImageIds] = useState<string[]>([]);
+  const [rightImageIds, setRightImageIds] = useState<string[]>([]);
+
   // Rating workflow state
   const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [pairedAssignments, setPairedAssignments] = useState<PairedAssignment[]>([]);
   const [currentAssignment, setCurrentAssignment] = useState<Assignment | null>(null);
+  const [currentPairedAssignment, setCurrentPairedAssignment] = useState<PairedAssignment | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -55,6 +64,8 @@ function App() {
   // Refs for duration tracking
   const itemOpenTimeRef = useRef<string | null>(null);
   const sessionServiceRef = useRef<SessionService | null>(null);
+
+  const isSideBySide = STUDY_CONFIG.displayMode === 'sideBySide';
 
   // Initialize Cornerstone, load manifest, and set up session
   useEffect(() => {
@@ -76,65 +87,141 @@ function App() {
         if (cancelled) return;
         setManifest(loadedManifest);
 
-        // Build assignments
         const raterId = STUDY_CONFIG.devRaterId;
-        const builtAssignments = buildAssignments(loadedManifest, raterId);
-        setAssignments(builtAssignments);
 
-        if (builtAssignments.length === 0) {
-          setError('No series found in manifest');
-          setView('error');
-          return;
+        if (isSideBySide) {
+          // --- Side-by-side mode: paired assignments ---
+          const builtPairedAssignments = buildPairedAssignments(loadedManifest, raterId);
+          setPairedAssignments(builtPairedAssignments);
+
+          if (builtPairedAssignments.length === 0) {
+            setError('No subjects found in manifest');
+            setView('error');
+            return;
+          }
+
+          // Convert paired assignments to Assignment-like for session service compatibility
+          const sessionAssignments: Assignment[] = builtPairedAssignments.map((pa) => ({
+            id: pa.id,
+            raterId: pa.raterId,
+            seriesId: pa.leftSeriesId, // Use left series as primary for session tracking
+            caseSubjectId: pa.subjectId,
+            presentationOrder: pa.presentationOrder,
+            displayLabel: pa.displayLabel,
+          }));
+          setAssignments(sessionAssignments);
+
+          // Set up session service
+          setLoadingStatus('Setting up session...');
+          const sessionSvc = new SessionService(raterId, sessionAssignments);
+          sessionServiceRef.current = sessionSvc;
+
+          const session = await sessionSvc.restoreOrInitSession();
+          if (cancelled) return;
+          setSessionState(session);
+
+          if (sessionSvc.isStudyComplete(session)) {
+            setView('complete');
+            return;
+          }
+
+          // Load current paired assignment
+          const currentIndex = session.currentAssignmentIndex;
+          const pairedAssignment = builtPairedAssignments[currentIndex];
+          if (!pairedAssignment) {
+            setView('complete');
+            return;
+          }
+
+          setCurrentPairedAssignment(pairedAssignment);
+          setCurrentAssignment(sessionAssignments[currentIndex] ?? null);
+          setInProgressResponses(session.inProgressResponses);
+
+          // Load image IDs for both series
+          setLoadingStatus('Loading DICOM images...');
+          const [leftIds, rightIds] = await Promise.all([
+            source.getSeriesImageIds(pairedAssignment.leftSeriesId),
+            source.getSeriesImageIds(pairedAssignment.rightSeriesId),
+          ]);
+
+          if (cancelled) return;
+
+          // Find series metadata for window settings
+          const seriesMeta = findSeriesMeta(loadedManifest, pairedAssignment.leftSeriesId);
+
+          setCurrentSeriesId(pairedAssignment.leftSeriesId);
+          setLeftImageIds(leftIds);
+          setRightImageIds(rightIds);
+          setTotalSlices(leftIds.length);
+          setWindowCenter(seriesMeta?.windowCenter ?? 21);
+          setWindowWidth(seriesMeta?.windowWidth ?? 54);
+          setView('viewer');
+
+          // Record item-open time
+          const openTime = new Date().toISOString();
+          itemOpenTimeRef.current = openTime;
+          const updatedSession = await sessionSvc.recordItemOpen(session);
+          setSessionState(updatedSession);
+        } else {
+          // --- Sequential mode: existing behavior ---
+          const builtAssignments = buildAssignments(loadedManifest, raterId);
+          setAssignments(builtAssignments);
+
+          if (builtAssignments.length === 0) {
+            setError('No series found in manifest');
+            setView('error');
+            return;
+          }
+
+          // Set up session service and restore/init session
+          setLoadingStatus('Setting up session...');
+          const sessionSvc = new SessionService(raterId, builtAssignments);
+          sessionServiceRef.current = sessionSvc;
+
+          const session = await sessionSvc.restoreOrInitSession();
+
+          if (cancelled) return;
+          setSessionState(session);
+
+          // Check if study is already complete
+          if (sessionSvc.isStudyComplete(session)) {
+            setView('complete');
+            return;
+          }
+
+          // Load the current assignment's series
+          const assignment = sessionSvc.getCurrentAssignment(session);
+          if (!assignment) {
+            setView('complete');
+            return;
+          }
+
+          setCurrentAssignment(assignment);
+          setInProgressResponses(session.inProgressResponses);
+
+          // Load image IDs for the series
+          setLoadingStatus('Loading DICOM images...');
+          const ids = await source.getSeriesImageIds(assignment.seriesId);
+
+          if (cancelled) return;
+
+          // Find the series metadata for window settings
+          const seriesMeta = findSeriesMeta(loadedManifest, assignment.seriesId);
+
+          setCurrentSeriesId(assignment.seriesId);
+          setImageIds(ids);
+          setTotalSlices(ids.length);
+          setWindowCenter(seriesMeta?.windowCenter ?? 21);
+          setWindowWidth(seriesMeta?.windowWidth ?? 54);
+          setView('viewer');
+
+          // Record item-open time
+          const openTime = new Date().toISOString();
+          itemOpenTimeRef.current = openTime;
+
+          const updatedSession = await sessionSvc.recordItemOpen(session);
+          setSessionState(updatedSession);
         }
-
-        // Set up session service and restore/init session
-        setLoadingStatus('Setting up session...');
-        const sessionSvc = new SessionService(raterId, builtAssignments);
-        sessionServiceRef.current = sessionSvc;
-
-        const session = await sessionSvc.restoreOrInitSession();
-
-        if (cancelled) return;
-        setSessionState(session);
-
-        // Check if study is already complete
-        if (sessionSvc.isStudyComplete(session)) {
-          setView('complete');
-          return;
-        }
-
-        // Load the current assignment's series
-        const assignment = sessionSvc.getCurrentAssignment(session);
-        if (!assignment) {
-          setView('complete');
-          return;
-        }
-
-        setCurrentAssignment(assignment);
-        setInProgressResponses(session.inProgressResponses);
-
-        // Load image IDs for the series
-        setLoadingStatus('Loading DICOM images...');
-        const ids = await source.getSeriesImageIds(assignment.seriesId);
-
-        if (cancelled) return;
-
-        // Find the series metadata for window settings
-        const seriesMeta = findSeriesMeta(loadedManifest, assignment.seriesId);
-
-        setCurrentSeriesId(assignment.seriesId);
-        setImageIds(ids);
-        setTotalSlices(ids.length);
-        setWindowCenter(seriesMeta?.windowCenter ?? 21);
-        setWindowWidth(seriesMeta?.windowWidth ?? 54);
-        setView('viewer');
-
-        // Record item-open time
-        const openTime = new Date().toISOString();
-        itemOpenTimeRef.current = openTime;
-
-        const updatedSession = await sessionSvc.recordItemOpen(session);
-        setSessionState(updatedSession);
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : String(err);
@@ -149,7 +236,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isSideBySide]);
 
   // Unsaved changes warning (beforeunload)
   useEffect(() => {
@@ -199,7 +286,8 @@ function App() {
   // Handle rating submission
   const handleSubmit = useCallback(
     async (responses: RatingResponse[]) => {
-      if (!currentAssignment || !sessionState || !sessionServiceRef.current) return;
+      const assignmentToSubmit = currentAssignment;
+      if (!assignmentToSubmit || !sessionState || !sessionServiceRef.current) return;
 
       setIsSaving(true);
 
@@ -220,10 +308,10 @@ function App() {
         const durationMs = new Date(now).getTime() - new Date(openTime).getTime();
 
         const submission: RatingSubmission = {
-          id: `${currentAssignment.id}_${Date.now()}`,
+          id: `${assignmentToSubmit.id}_${Date.now()}`,
           raterId: STUDY_CONFIG.devRaterId,
-          assignmentId: currentAssignment.id,
-          seriesId: currentAssignment.seriesId,
+          assignmentId: assignmentToSubmit.id,
+          seriesId: assignmentToSubmit.seriesId,
           responses,
           viewerState,
           itemOpenTime: openTime,
@@ -237,7 +325,7 @@ function App() {
         // Advance session
         const updatedSession = await sessionServiceRef.current.advanceToNext(
           sessionState,
-          currentAssignment.id,
+          assignmentToSubmit.id,
         );
         setSessionState(updatedSession);
         setHasUnsavedChanges(false);
@@ -255,27 +343,60 @@ function App() {
         }
 
         // Load next assignment
-        const nextAssignment = sessionServiceRef.current.getCurrentAssignment(updatedSession);
-        if (!nextAssignment) {
-          setView('complete');
-          setIsSaving(false);
-          return;
+        if (isSideBySide) {
+          // Side-by-side mode: load next paired assignment
+          const nextIndex = updatedSession.currentAssignmentIndex;
+          const nextPairedAssignment = pairedAssignments[nextIndex];
+          if (!nextPairedAssignment) {
+            setView('complete');
+            setIsSaving(false);
+            return;
+          }
+
+          setCurrentPairedAssignment(nextPairedAssignment);
+          setCurrentAssignment(assignments[nextIndex] ?? null);
+          setViewportKey((k) => k + 1);
+
+          const source = getImageSource();
+          const [leftIds, rightIds] = await Promise.all([
+            source.getSeriesImageIds(nextPairedAssignment.leftSeriesId),
+            source.getSeriesImageIds(nextPairedAssignment.rightSeriesId),
+          ]);
+          const seriesMeta = manifest
+            ? findSeriesMeta(manifest, nextPairedAssignment.leftSeriesId)
+            : null;
+
+          setCurrentSeriesId(nextPairedAssignment.leftSeriesId);
+          setLeftImageIds(leftIds);
+          setRightImageIds(rightIds);
+          setTotalSlices(leftIds.length);
+          setCurrentSlice(1);
+          setWindowCenter(seriesMeta?.windowCenter ?? 21);
+          setWindowWidth(seriesMeta?.windowWidth ?? 54);
+        } else {
+          // Sequential mode: load next single assignment
+          const nextAssignment = sessionServiceRef.current.getCurrentAssignment(updatedSession);
+          if (!nextAssignment) {
+            setView('complete');
+            setIsSaving(false);
+            return;
+          }
+
+          // Reset viewport state for next item
+          setCurrentAssignment(nextAssignment);
+          setViewportKey((k) => k + 1);
+
+          const source = getImageSource();
+          const ids = await source.getSeriesImageIds(nextAssignment.seriesId);
+          const seriesMeta = manifest ? findSeriesMeta(manifest, nextAssignment.seriesId) : null;
+
+          setCurrentSeriesId(nextAssignment.seriesId);
+          setImageIds(ids);
+          setTotalSlices(ids.length);
+          setCurrentSlice(1);
+          setWindowCenter(seriesMeta?.windowCenter ?? 21);
+          setWindowWidth(seriesMeta?.windowWidth ?? 54);
         }
-
-        // Reset viewport state for next item
-        setCurrentAssignment(nextAssignment);
-        setViewportKey((k) => k + 1);
-
-        const source = getImageSource();
-        const ids = await source.getSeriesImageIds(nextAssignment.seriesId);
-        const seriesMeta = manifest ? findSeriesMeta(manifest, nextAssignment.seriesId) : null;
-
-        setCurrentSeriesId(nextAssignment.seriesId);
-        setImageIds(ids);
-        setTotalSlices(ids.length);
-        setCurrentSlice(1);
-        setWindowCenter(seriesMeta?.windowCenter ?? 21);
-        setWindowWidth(seriesMeta?.windowWidth ?? 54);
 
         // Record new item-open time
         const newOpenTime = new Date().toISOString();
@@ -290,8 +411,16 @@ function App() {
         setIsSaving(false);
       }
     },
-    [currentAssignment, sessionState, currentSlice, totalSlices, windowCenter, windowWidth, manifest],
+    [currentAssignment, sessionState, currentSlice, totalSlices, windowCenter, windowWidth, manifest, isSideBySide, pairedAssignments, assignments],
   );
+
+  // Determine the total item count for progress display
+  const totalItems = isSideBySide ? pairedAssignments.length : assignments.length;
+
+  // Determine display label
+  const displayLabel = isSideBySide
+    ? (currentPairedAssignment?.displayLabel ?? 'Comparison')
+    : (currentAssignment?.displayLabel ?? 'Image set');
 
   return (
     <div className="app" style={appStyle}>
@@ -331,7 +460,7 @@ function App() {
             <h1 style={titleStyle}>{STUDY_CONFIG.displayName}</h1>
             <p style={completeTextStyle}>✓ Study Complete</p>
             <p style={completeDetailStyle}>
-              You have rated all {assignments.length} image sets.
+              You have rated all {totalItems} {isSideBySide ? 'comparisons' : 'image sets'}.
               Thank you for your participation.
             </p>
           </div>
@@ -348,7 +477,7 @@ function App() {
                 ? sessionState.currentAssignmentIndex + 1
                 : 1
             }
-            totalItems={assignments.length}
+            totalItems={totalItems}
             hasUnsavedChanges={hasUnsavedChanges}
             isComplete={false}
           />
@@ -357,24 +486,36 @@ function App() {
             totalSlices={totalSlices}
             windowCenter={windowCenter}
             windowWidth={windowWidth}
-            renderingEngineId={RENDERING_ENGINE_ID}
-            viewportId={VIEWPORT_ID}
+            renderingEngineId={isSideBySide ? 'fgatir-dual-rendering-engine' : RENDERING_ENGINE_ID}
+            viewportId={isSideBySide ? 'fgatir-left-viewport' : VIEWPORT_ID}
             initialWindowCenter={windowCenter}
             initialWindowWidth={windowWidth}
           />
           <div style={contentAreaStyle}>
             <div style={viewportContainerStyle}>
-              <DicomViewport
-                key={viewportKey}
-                imageIds={imageIds}
-                initialWindowCenter={windowCenter}
-                initialWindowWidth={windowWidth}
-                onSliceChange={handleSliceChange}
-                onVoiChange={handleVoiChange}
-              />
+              {isSideBySide ? (
+                <DualDicomViewport
+                  key={viewportKey}
+                  leftImageIds={leftImageIds}
+                  rightImageIds={rightImageIds}
+                  initialWindowCenter={windowCenter}
+                  initialWindowWidth={windowWidth}
+                  onSliceChange={handleSliceChange}
+                  onVoiChange={handleVoiChange}
+                />
+              ) : (
+                <DicomViewport
+                  key={viewportKey}
+                  imageIds={imageIds}
+                  initialWindowCenter={windowCenter}
+                  initialWindowWidth={windowWidth}
+                  onSliceChange={handleSliceChange}
+                  onVoiChange={handleVoiChange}
+                />
+              )}
             </div>
             <RatingForm
-              displayLabel={currentAssignment?.displayLabel ?? 'Image set'}
+              displayLabel={displayLabel}
               onSubmit={handleSubmit}
               isSaving={isSaving}
               initialResponses={inProgressResponses}

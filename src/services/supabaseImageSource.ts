@@ -79,6 +79,20 @@ export class SupabaseImageSource implements ImageSource {
     return signedUrls.map((url) => `wadouri:${url}`);
   }
 
+  /**
+   * Get all series IDs for a given subject.
+   */
+  async getSubjectSeriesIds(subjectId: string): Promise<string[]> {
+    const manifest = await this.getManifest();
+
+    const caseEntry = manifest.cases.find((c) => c.subjectId === subjectId);
+    if (!caseEntry) {
+      throw new Error(`Subject not found in manifest: ${subjectId}`);
+    }
+
+    return caseEntry.series.map((s) => s.seriesId);
+  }
+
   // --- Private Methods ---
 
   private async fetchManifest(): Promise<StudyManifest> {

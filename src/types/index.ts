@@ -135,6 +135,19 @@ export interface Assignment {
   displayLabel: string; // e.g., "Image set 1"
 }
 
+/** Paired assignment for side-by-side mode — one rating per subject pair */
+export interface PairedAssignment {
+  id: string;
+  raterId: string;
+  subjectId: string;
+  /** Series ID shown in the left viewport ("Image A") */
+  leftSeriesId: string;
+  /** Series ID shown in the right viewport ("Image B") */
+  rightSeriesId: string;
+  presentationOrder: number;
+  displayLabel: string; // e.g., "Comparison 1"
+}
+
 // --- Randomization Types ---
 
 /** Configuration for deterministic randomization */
