@@ -1,6 +1,6 @@
 # FGATIR Rater Study
 
-A browser-based tool for blinded quality assessment of brain MRI images (FGATIR sequence). Designed for neuroradiologists to evaluate randomized, anonymized MRI series.
+A browser-based tool for blinded quality assessment of brain MRI images (FGATIR sequence).
 
 ## Access
 
@@ -27,6 +27,10 @@ Open the link in Chrome, Edge, or Firefox (Safari is not supported). Enter your 
 ## Citation
 
 If you use this tool in your research, please cite: *(TBD)*
+
+## Disclaimer
+
+This tool is intended for research purposes only. It is **not for clinical use**.
 
 ## License
 
