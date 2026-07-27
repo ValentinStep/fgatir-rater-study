@@ -17,6 +17,7 @@
     "ingest-cases": "tsx scripts/ingest-cases.ts",
     "validate-manifest": "tsx scripts/validate-manifest.ts",
     "export-unblinding": "tsx scripts/export-unblinding.ts",
+    "export-ratings": "tsx scripts/export-ratings-csv.ts",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
