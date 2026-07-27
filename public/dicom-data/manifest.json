@@ -2,37 +2,10 @@
   "version": "1.0",
   "cases": [
     {
-      "subjectId": "subject_160b20bf739b",
+      "subjectId": "subject_13a762c4206c",
       "series": [
         {
-          "seriesId": "series_3497ec7083b3",
-          "sliceCount": 160,
-          "rows": 224,
-          "columns": 216,
-          "bitsAllocated": 16,
-          "bitsStored": 12,
-          "windowCenter": 21,
-          "windowWidth": 54,
-          "transferSyntaxUID": "1.2.840.10008.1.2.1"
-        },
-        {
-          "seriesId": "series_bc5b4745c247",
-          "sliceCount": 160,
-          "rows": 224,
-          "columns": 216,
-          "bitsAllocated": 16,
-          "bitsStored": 12,
-          "windowCenter": 21,
-          "windowWidth": 54,
-          "transferSyntaxUID": "1.2.840.10008.1.2.1"
-        }
-      ]
-    },
-    {
-      "subjectId": "subject_c37be7dc71ff",
-      "series": [
-        {
-          "seriesId": "series_03b422666876",
+          "seriesId": "series_a01b21d4e992",
           "sliceCount": 286,
           "rows": 256,
           "columns": 176,
@@ -43,7 +16,7 @@
           "transferSyntaxUID": "1.2.840.10008.1.2.1"
         },
         {
-          "seriesId": "series_24c546d97004",
+          "seriesId": "series_61db58c68bc9",
           "sliceCount": 286,
           "rows": 256,
           "columns": 176,
@@ -56,10 +29,10 @@
       ]
     },
     {
-      "subjectId": "subject_e3cc30501070",
+      "subjectId": "subject_69de8733d8a4",
       "series": [
         {
-          "seriesId": "series_83cb00a714a5",
+          "seriesId": "series_7b634c0dd685",
           "sliceCount": 160,
           "rows": 256,
           "columns": 224,
@@ -70,7 +43,7 @@
           "transferSyntaxUID": "1.2.840.10008.1.2.1"
         },
         {
-          "seriesId": "series_24a0e8490ff5",
+          "seriesId": "series_e35f6d924df6",
           "sliceCount": 160,
           "rows": 256,
           "columns": 224,
@@ -83,10 +56,10 @@
       ]
     },
     {
-      "subjectId": "subject_9a85469c69ae",
+      "subjectId": "subject_fb1b01fe2b6d",
       "series": [
         {
-          "seriesId": "series_fcc0a645a817",
+          "seriesId": "series_2964d7ef8ca9",
           "sliceCount": 176,
           "rows": 256,
           "columns": 256,
@@ -97,7 +70,7 @@
           "transferSyntaxUID": "1.2.840.10008.1.2.1"
         },
         {
-          "seriesId": "series_7bc3a1e4c535",
+          "seriesId": "series_ea2067e69acb",
           "sliceCount": 176,
           "rows": 256,
           "columns": 256,

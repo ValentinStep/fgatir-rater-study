@@ -3,11 +3,17 @@
  *
  * Ingestion script that:
  * 1. Scans for case folders (original/denoised pairs)
- * 2. Copies DICOM files to local-data/ with neutral filenames
- * 3. Orders slices by InstanceNumber/SliceLocation
- * 4. Generates manifest.json and .unblinding-key.json
+ * 2. Reads DICOM UIDs for DETERMINISTIC series/subject IDs
+ * 3. Copies DICOM files to local-data/ with neutral filenames
+ * 4. Orders slices by InstanceNumber/SliceLocation
+ * 5. Generates manifest.json and .unblinding-key.json
+ * 6. SKIPS series that already exist in the output directory
  *
  * Usage: npm run ingest-cases -- --input <path-to-test-case-folder> --output <output-dir>
+ *
+ * ID GENERATION:
+ *   subjectId = SHA-256(StudyInstanceUID)[0:12] → stable for same patient/study
+ *   seriesId  = SHA-256(SeriesInstanceUID)[0:12] → stable for same series data
  *
  * NEVER includes PHI in output manifests.
  */
@@ -115,6 +121,39 @@ function findDicomFiles(dirPath: string): string[] {
   return files.sort();
 }
 
+/**
+ * Read DICOM UIDs from the first valid file in a directory.
+ * Returns StudyInstanceUID and SeriesInstanceUID.
+ */
+function readDicomUIDs(dirPath: string): {
+  studyInstanceUID: string;
+  seriesInstanceUID: string;
+} | null {
+  const files = findDicomFiles(dirPath);
+  for (const file of files) {
+    try {
+      const buffer = fs.readFileSync(file);
+      const byteArray = new Uint8Array(
+        buffer.buffer,
+        buffer.byteOffset,
+        buffer.byteLength,
+      );
+      const dataSet = dicomParser.parseDicom(byteArray);
+
+      const studyInstanceUID = dataSet.string('x0020000d');
+      const seriesInstanceUID = dataSet.string('x0020000e');
+
+      if (studyInstanceUID && seriesInstanceUID) {
+        return { studyInstanceUID, seriesInstanceUID };
+      }
+    } catch {
+      // Not a valid DICOM, try next file
+      continue;
+    }
+  }
+  return null;
+}
+
 function parseDicomSliceInfo(filePath: string): SliceFile | null {
   try {
     const buffer = fs.readFileSync(filePath);
@@ -190,6 +229,8 @@ interface DetectedCase {
   subjectId: string;
   originalDir: string;
   denoisedDir: string | null;
+  originalSeriesId: string;
+  denoisedSeriesId: string | null;
 }
 
 function detectCases(inputDir: string): DetectedCase[] {
@@ -209,14 +250,32 @@ function detectCases(inputDir: string): DetectedCase[] {
       // This is a denoised dir, find its original
       const baseName = dir.replace(/_denoised$/, '');
       if (!processed.has(baseName)) {
-        // Check if the original exists (might be in a subfolder)
         const originalCandidate = path.join(inputDir, baseName);
         if (fs.existsSync(originalCandidate)) {
-          const subjectId = generateDeterministicId(baseName, 'subject');
+          // Read UIDs from original dir
+          const originalImageDir = findImageDirectory(originalCandidate);
+          const originalUIDs = readDicomUIDs(originalImageDir);
+          if (!originalUIDs) {
+            console.warn(`  Warning: Could not read UIDs from ${baseName}, skipping`);
+            continue;
+          }
+
+          // Read UIDs from denoised dir
+          const denoisedImageDir = findImageDirectory(path.join(inputDir, dir));
+          const denoisedUIDs = readDicomUIDs(denoisedImageDir);
+
+          const subjectId = generateDeterministicId(originalUIDs.studyInstanceUID, 'subject');
+          const originalSeriesId = generateDeterministicId(originalUIDs.seriesInstanceUID, 'series');
+          const denoisedSeriesId = denoisedUIDs
+            ? generateDeterministicId(denoisedUIDs.seriesInstanceUID, 'series')
+            : null;
+
           cases.push({
             subjectId,
             originalDir: originalCandidate,
             denoisedDir: path.join(inputDir, dir),
+            originalSeriesId,
+            denoisedSeriesId,
           });
           processed.add(baseName);
           processed.add(dir);
@@ -226,22 +285,45 @@ function detectCases(inputDir: string): DetectedCase[] {
       // Check if a denoised counterpart exists
       const denoisedName = `${dir}_denoised`;
       const denoisedPath = path.join(inputDir, denoisedName);
-      const subjectId = generateDeterministicId(dir, 'subject');
+      const originalPath = path.join(inputDir, dir);
+
+      // Read UIDs from original dir
+      const originalImageDir = findImageDirectory(originalPath);
+      const originalUIDs = readDicomUIDs(originalImageDir);
+      if (!originalUIDs) {
+        console.warn(`  Warning: Could not read UIDs from ${dir}, skipping`);
+        processed.add(dir);
+        continue;
+      }
+
+      const subjectId = generateDeterministicId(originalUIDs.studyInstanceUID, 'subject');
+      const originalSeriesId = generateDeterministicId(originalUIDs.seriesInstanceUID, 'series');
 
       if (dirs.includes(denoisedName)) {
+        // Read UIDs from denoised dir
+        const denoisedImageDir = findImageDirectory(denoisedPath);
+        const denoisedUIDs = readDicomUIDs(denoisedImageDir);
+        const denoisedSeriesId = denoisedUIDs
+          ? generateDeterministicId(denoisedUIDs.seriesInstanceUID, 'series')
+          : null;
+
         cases.push({
           subjectId,
-          originalDir: path.join(inputDir, dir),
+          originalDir: originalPath,
           denoisedDir: denoisedPath,
+          originalSeriesId,
+          denoisedSeriesId,
         });
         processed.add(dir);
         processed.add(denoisedName);
       } else {
-        // Solo directory - might contain IMAGES subfolder
+        // Solo directory
         cases.push({
           subjectId,
-          originalDir: path.join(inputDir, dir),
+          originalDir: originalPath,
           denoisedDir: null,
+          originalSeriesId,
+          denoisedSeriesId: null,
         });
         processed.add(dir);
       }
@@ -253,7 +335,6 @@ function detectCases(inputDir: string): DetectedCase[] {
 
 function findImageDirectory(caseDir: string): string {
   // Look for DICOM files directly or in known subdirectories
-  // Common patterns: <case>/<date>/IMAGES/ or <case>/
   const imagesSubdir = findDeepestImageDir(caseDir);
   return imagesSubdir || caseDir;
 }
@@ -262,7 +343,7 @@ function findDeepestImageDir(dir: string): string | null {
   // Recursively search for a directory containing DICOM-like files
   const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-  // Check if this dir directly contains DICOM files (files without common extensions)
+  // Check if this dir directly contains DICOM files
   const hasFiles = entries.some(
     (e) =>
       e.isFile() &&
@@ -423,7 +504,7 @@ function main(): void {
   // Create output directory
   fs.mkdirSync(output, { recursive: true });
 
-  // Detect cases
+  // Detect cases (reads UIDs for deterministic IDs)
   const cases = detectCases(input);
   console.log(`Detected ${cases.length} case(s)`);
   console.log('');
@@ -433,10 +514,21 @@ function main(): void {
     process.exit(1);
   }
 
-  const manifest: StudyManifest = {
-    version: '1.0',
-    cases: [],
-  };
+  // Load existing manifest to merge into (rather than overwriting)
+  const manifestPath = path.join(output, 'manifest.json');
+  let manifest: StudyManifest;
+  try {
+    const existing = fs.readFileSync(manifestPath, 'utf-8');
+    manifest = JSON.parse(existing);
+  } catch {
+    manifest = { version: '1.0', cases: [] };
+  }
+
+  // Track existing subjects/series in manifest
+  const existingSubjects = new Map<string, CaseEntry>();
+  for (const c of manifest.cases) {
+    existingSubjects.set(c.subjectId, c);
+  }
 
   const unblindingKey: UnblindingKey = {
     version: '1.0',
@@ -444,87 +536,121 @@ function main(): void {
     entries: [],
   };
 
+  // Load existing unblinding key to merge
+  const keyPath = path.join(output, '.unblinding-key.json');
+  try {
+    const existingKey = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
+    if (existingKey.entries) {
+      unblindingKey.entries = existingKey.entries;
+    }
+  } catch {
+    // No existing key, start fresh
+  }
+
+  const existingSeriesIds = new Set(unblindingKey.entries.map((e) => e.seriesId));
+
+  let newCasesAdded = 0;
+  let seriesSkipped = 0;
+
   for (const detectedCase of cases) {
     console.log(`Processing case: ${detectedCase.subjectId}`);
 
-    const caseEntry: CaseEntry = {
+    const caseEntry: CaseEntry = existingSubjects.get(detectedCase.subjectId) || {
       subjectId: detectedCase.subjectId,
       series: [],
     };
+    const isNewCase = !existingSubjects.has(detectedCase.subjectId);
+
+    // Track existing series in this case
+    const existingSeriesInCase = new Set(caseEntry.series.map((s) => s.seriesId));
 
     // Process original series
-    const originalImageDir = findImageDirectory(detectedCase.originalDir);
-    const originalSeriesId = generateDeterministicId(
-      `${detectedCase.subjectId}_original`,
-      'series',
-    );
+    const originalSeriesId = detectedCase.originalSeriesId;
+    const originalOutputDir = path.join(output, originalSeriesId);
 
-    console.log('  [Original]');
-    const originalSeries = ingestSeries(
-      originalImageDir,
-      originalSeriesId,
-      output,
-    );
-
-    if (originalSeries) {
-      caseEntry.series.push(originalSeries);
-      unblindingKey.entries.push({
-        seriesId: originalSeriesId,
-        condition: 'original',
-        sourceFolder: path.basename(detectedCase.originalDir),
-      });
-    }
-
-    // Process denoised series if available
-    if (detectedCase.denoisedDir) {
-      const denoisedImageDir = findImageDirectory(detectedCase.denoisedDir);
-      const denoisedSeriesId = generateDeterministicId(
-        `${detectedCase.subjectId}_denoised`,
-        'series',
-      );
-
-      console.log('  [Denoised]');
-      const denoisedSeries = ingestSeries(
-        denoisedImageDir,
-        denoisedSeriesId,
+    if (fs.existsSync(originalOutputDir)) {
+      console.log(`  · Skipped ${originalSeriesId} (already exists)`);
+      seriesSkipped++;
+    } else {
+      console.log('  [Original]');
+      const originalImageDir = findImageDirectory(detectedCase.originalDir);
+      const originalSeries = ingestSeries(
+        originalImageDir,
+        originalSeriesId,
         output,
       );
 
-      if (denoisedSeries) {
-        caseEntry.series.push(denoisedSeries);
-        unblindingKey.entries.push({
-          seriesId: denoisedSeriesId,
-          condition: 'denoised',
-          sourceFolder: path.basename(detectedCase.denoisedDir),
-        });
+      if (originalSeries && !existingSeriesInCase.has(originalSeriesId)) {
+        caseEntry.series.push(originalSeries);
+      }
 
-        // Validate geometry between original and denoised
-        if (originalSeries) {
-          validateGeometry(originalSeries, denoisedSeries);
+      if (!existingSeriesIds.has(originalSeriesId)) {
+        unblindingKey.entries.push({
+          seriesId: originalSeriesId,
+          condition: 'original',
+          sourceFolder: path.basename(detectedCase.originalDir),
+        });
+      }
+    }
+
+    // Process denoised series if available
+    if (detectedCase.denoisedDir && detectedCase.denoisedSeriesId) {
+      const denoisedSeriesId = detectedCase.denoisedSeriesId;
+      const denoisedOutputDir = path.join(output, denoisedSeriesId);
+
+      if (fs.existsSync(denoisedOutputDir)) {
+        console.log(`  · Skipped ${denoisedSeriesId} (already exists)`);
+        seriesSkipped++;
+      } else {
+        console.log('  [Denoised]');
+        const denoisedImageDir = findImageDirectory(detectedCase.denoisedDir);
+        const denoisedSeries = ingestSeries(
+          denoisedImageDir,
+          denoisedSeriesId,
+          output,
+        );
+
+        if (denoisedSeries && !existingSeriesInCase.has(denoisedSeriesId)) {
+          caseEntry.series.push(denoisedSeries);
+
+          // Validate geometry between original and denoised
+          const originalInCase = caseEntry.series.find((s) => s.seriesId === originalSeriesId);
+          if (originalInCase) {
+            validateGeometry(originalInCase, denoisedSeries);
+          }
+        }
+
+        if (!existingSeriesIds.has(denoisedSeriesId)) {
+          unblindingKey.entries.push({
+            seriesId: denoisedSeriesId,
+            condition: 'denoised',
+            sourceFolder: path.basename(detectedCase.denoisedDir),
+          });
         }
       }
     }
 
-    if (caseEntry.series.length > 0) {
+    if (isNewCase && caseEntry.series.length > 0) {
       manifest.cases.push(caseEntry);
+      newCasesAdded++;
     }
 
     console.log('');
   }
 
   // Write manifest
-  const manifestPath = path.join(output, 'manifest.json');
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   console.log(`✓ Manifest written: ${manifestPath}`);
 
   // Write unblinding key (gitignored)
-  const keyPath = path.join(output, '.unblinding-key.json');
   fs.writeFileSync(keyPath, JSON.stringify(unblindingKey, null, 2) + '\n');
   console.log(`✓ Unblinding key written: ${keyPath}`);
 
   console.log('');
   console.log('=== Ingestion Complete ===');
-  console.log(`  Cases: ${manifest.cases.length}`);
+  console.log(`  New cases added: ${newCasesAdded}`);
+  console.log(`  Series skipped (already exist): ${seriesSkipped}`);
+  console.log(`  Total cases in manifest: ${manifest.cases.length}`);
   console.log(
     `  Total series: ${manifest.cases.reduce((sum, c) => sum + c.series.length, 0)}`,
   );
