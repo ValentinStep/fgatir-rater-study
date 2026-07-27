@@ -16,9 +16,7 @@ import { ProgressHeader } from '@/components/ProgressHeader/ProgressHeader';
 import { RatingForm } from '@/components/RatingForm/RatingForm';
 import { CompletionScreen } from '@/components/CompletionScreen';
 import { RaterLogin } from '@/components/RaterLogin';
-import { getImageSource } from '@/services/imageSource';
-import { getRatingService } from '@/services/ratingService';
-import { SessionService, buildAssignments, buildPairedAssignments } from '@/services/sessionService';
+import { getImageSource, getRatingService, SessionService, buildAssignments, buildPairedAssignments } from '@/services';
 import { STUDY_CONFIG } from '@/config/studyConfig';
 import type {
   RatingResponse,
@@ -28,7 +26,7 @@ import type {
   PairedAssignment,
   ViewerStateSnapshot,
 } from '@/types';
-import type { StudyManifest } from '@/services/imageSource';
+import type { StudyManifest } from '@/services';
 
 type AppView = 'login' | 'loading' | 'viewer' | 'error' | 'complete';
 

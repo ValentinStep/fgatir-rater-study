@@ -68,22 +68,26 @@ export class SupabaseRatingService implements IRatingService {
       throw new Error(`Failed to save rating: ${ratingError.message}`);
     }
 
-    // Update assignment status to completed
-    const { error: assignmentError } = await this.withRetry(async () =>
-      supabase
-        .from('assignments')
-        .update({
-          status: 'completed',
-          completed_at: submission.submissionTime,
-        } as never)
-        .eq('id', submission.assignmentId),
-    );
-
-    if (assignmentError) {
-      // Non-fatal: rating was saved, log warning
-      console.warn(
-        `Rating saved but failed to update assignment status: ${assignmentError.message}`,
+    // Update assignment status to completed (optional — table may not exist in simplified deployments)
+    try {
+      const { error: assignmentError } = await this.withRetry(async () =>
+        supabase
+          .from('assignments')
+          .update({
+            status: 'completed',
+            completed_at: submission.submissionTime,
+          } as never)
+          .eq('id', submission.assignmentId),
       );
+
+      if (assignmentError) {
+        // Non-fatal: rating was saved, assignment tracking is optional
+        console.debug(
+          `[SupabaseRatingService] Assignment update skipped: ${assignmentError.message}`,
+        );
+      }
+    } catch {
+      // Silently ignore — assignments table is optional in simplified deployments
     }
   }
 
