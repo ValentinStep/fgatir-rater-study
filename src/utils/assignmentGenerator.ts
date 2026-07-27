@@ -127,8 +127,8 @@ export function generatePairedAssignments(
   // Build paired assignments
   const assignments: PairedAssignment[] = subjects.map((subject, index) => {
     const seriesIds = [...subject.seriesIds];
-    // Randomize left/right assignment (blinded)
-    seededShuffle(seriesIds, rng);
+    // Fixed order: original (series[0]) = left, denoised (series[1]) = right
+    // No randomization — study is not blinded for presentation order
 
     return {
       id: `${config.raterId}_pair_${subject.subjectId}_${index}`,
