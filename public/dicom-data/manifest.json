@@ -2,28 +2,55 @@
   "version": "1.0",
   "cases": [
     {
-      "subjectId": "subject_160b20bf739b",
+      "subjectId": "subject_c37be7dc71ff",
       "series": [
         {
-          "seriesId": "series_3497ec7083b3",
-          "sliceCount": 160,
-          "rows": 224,
-          "columns": 216,
+          "seriesId": "series_03b422666876",
+          "sliceCount": 286,
+          "rows": 256,
+          "columns": 176,
           "bitsAllocated": 16,
-          "bitsStored": 12,
-          "windowCenter": 21,
-          "windowWidth": 54,
+          "bitsStored": 16,
+          "windowCenter": 334,
+          "windowWidth": 755,
           "transferSyntaxUID": "1.2.840.10008.1.2.1"
         },
         {
-          "seriesId": "series_bc5b4745c247",
+          "seriesId": "series_24c546d97004",
+          "sliceCount": 286,
+          "rows": 256,
+          "columns": 176,
+          "bitsAllocated": 16,
+          "bitsStored": 16,
+          "windowCenter": 334,
+          "windowWidth": 755,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "subject_e3cc30501070",
+      "series": [
+        {
+          "seriesId": "series_83cb00a714a5",
           "sliceCount": 160,
-          "rows": 224,
-          "columns": 216,
+          "rows": 256,
+          "columns": 224,
           "bitsAllocated": 16,
           "bitsStored": 12,
-          "windowCenter": 21,
-          "windowWidth": 54,
+          "windowCenter": 67,
+          "windowWidth": 192,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        },
+        {
+          "seriesId": "series_24a0e8490ff5",
+          "sliceCount": 160,
+          "rows": 256,
+          "columns": 224,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 67,
+          "windowWidth": 192,
           "transferSyntaxUID": "1.2.840.10008.1.2.1"
         }
       ]
