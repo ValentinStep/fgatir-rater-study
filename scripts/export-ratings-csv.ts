@@ -18,6 +18,38 @@ import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// --- Unblinding key support ---
+interface UnblindingEntry {
+  seriesId: string;
+  condition: string;
+  sourceFolder: string;
+}
+
+interface UnblindingKey {
+  version: string;
+  generatedAt: string;
+  entries: UnblindingEntry[];
+}
+
+function loadUnblindingKey(): Map<string, UnblindingEntry> {
+  const keyPath = path.resolve(process.cwd(), 'local-data', '.unblinding-key.json');
+  const map = new Map<string, UnblindingEntry>();
+  if (!fs.existsSync(keyPath)) {
+    console.warn('WARNING: local-data/.unblinding-key.json not found — source_folder/condition columns will be empty');
+    return map;
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(keyPath, 'utf-8')) as UnblindingKey;
+    for (const entry of raw.entries) {
+      map.set(entry.seriesId, entry);
+    }
+    console.log(`Loaded unblinding key with ${map.size} entries.`);
+  } catch (err) {
+    console.warn(`WARNING: Could not parse unblinding key: ${err}`);
+  }
+  return map;
+}
+
 // Load .env manually (tsx doesn't auto-load Vite env)
 function loadEnv(): Record<string, string> {
   const envPath = path.resolve(process.cwd(), '.env');
@@ -85,6 +117,9 @@ async function main() {
     process.exit(1);
   }
 
+  // Load unblinding key for mapping series_id → source_folder / condition
+  const unblindingMap = loadUnblindingKey();
+
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   console.log('Fetching ratings from Supabase...');
@@ -108,12 +143,14 @@ async function main() {
 
   console.log(`Found ${ratings.length} rating(s). Generating CSV...`);
 
-  // CSV header
+  // CSV header — includes unblinded source info
   const headers = [
     'id',
     'rater_id',
     'assignment_id',
     'series_id',
+    'source_folder',
+    'condition',
     ...QUESTION_IDS,
     'started_at',
     'submitted_at',
@@ -131,11 +168,16 @@ async function main() {
       }
     }
 
+    // Look up unblinding info
+    const unblinded = unblindingMap.get(rating.series_id);
+
     const row = [
       csvEscape(rating.id),
       csvEscape(rating.rater_id),
       csvEscape(rating.assignment_id),
       csvEscape(rating.series_id),
+      csvEscape(unblinded?.sourceFolder ?? ''),
+      csvEscape(unblinded?.condition ?? ''),
       ...QUESTION_IDS.map((qId) => csvEscape(responseMap.get(qId))),
       csvEscape(rating.started_at),
       csvEscape(rating.submitted_at),
@@ -155,6 +197,9 @@ async function main() {
 
   console.log(`\n✓ Exported ${ratings.length} ratings to: ${outputFile}`);
   console.log(`  Columns: ${headers.length} (${QUESTION_IDS.length} question columns + metadata)`);
+  if (unblindingMap.size > 0) {
+    console.log(`  Unblinding: source_folder and condition columns populated from .unblinding-key.json`);
+  }
 }
 
 main().catch((err) => {
