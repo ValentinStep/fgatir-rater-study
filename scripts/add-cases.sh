@@ -133,11 +133,56 @@ echo ""
 echo -e "${GREEN}[3/4] Copying to public/dicom-data/ for deployment...${NC}"
 echo ""
 
-# ── Step 3: Copy to public ──────────────────────────────────────────────────
-cp -r local-data/series_* public/dicom-data/
-cp local-data/manifest.json public/dicom-data/manifest.json
+# ── Step 3: Copy ONLY new series to public ───────────────────────────────────
+COPIED=0
+for series_dir in local-data/series_*/; do
+    series_name=$(basename "$series_dir")
+    if [ ! -d "public/dicom-data/$series_name" ]; then
+        cp -r "$series_dir" "public/dicom-data/$series_name"
+        echo "  + Copied $series_name"
+        COPIED=$((COPIED + 1))
+    else
+        echo "  · Skipped $series_name (already exists)"
+    fi
+done
+echo ""
+echo "  New series copied: $COPIED"
 
-# Count what we're adding
+# Merge manifests: append new cases into existing public manifest
+echo "  Merging manifest..."
+python3 -c "
+import json, sys
+
+# Read existing public manifest (the 'deployed' one)
+try:
+    with open('public/dicom-data/manifest.json') as f:
+        public_manifest = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    public_manifest = {'version': '1.0', 'cases': []}
+
+# Read newly-ingested manifest
+with open('local-data/manifest.json') as f:
+    new_manifest = json.load(f)
+
+# Get existing subject IDs to avoid duplicates
+existing_subjects = {c['subjectId'] for c in public_manifest['cases']}
+
+# Append only new cases
+added = 0
+for case in new_manifest['cases']:
+    if case['subjectId'] not in existing_subjects:
+        public_manifest['cases'].append(case)
+        added += 1
+
+# Write merged manifest
+with open('public/dicom-data/manifest.json', 'w') as f:
+    json.dump(public_manifest, f, indent=2)
+    f.write('\n')
+
+print(f'  Manifest: {added} new case(s) merged, {len(public_manifest[\"cases\"])} total')
+"
+
+# Count total DICOMs
 NEW_FILES=$(find public/dicom-data/ -name "*.dcm" | wc -l | tr -d ' ')
 echo "  Total DICOM files in public/dicom-data/: $NEW_FILES"
 
