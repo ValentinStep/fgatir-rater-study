@@ -37,7 +37,7 @@ export interface ImageSource {
 
 // --- LocalImageSource implementation ---
 
-const DICOM_DATA_BASE_PATH = '/dicom-data';
+const DICOM_DATA_BASE_PATH = import.meta.env.VITE_DICOM_BASE_PATH || '/dicom-data';
 
 export class LocalImageSource implements ImageSource {
   private manifest: StudyManifest | null = null;

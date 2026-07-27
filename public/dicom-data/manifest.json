@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "cases": [
+    {
+      "subjectId": "subject_e0bf6532e081",
+      "series": [
+        {
+          "seriesId": "series_bc5b4745c247",
+          "sliceCount": 160,
+          "rows": 224,
+          "columns": 216,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 21,
+          "windowWidth": 54,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        },
+        {
+          "seriesId": "series_3497ec7083b3",
+          "sliceCount": 160,
+          "rows": 224,
+          "columns": 216,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 21,
+          "windowWidth": 54,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    }
+  ]
+}

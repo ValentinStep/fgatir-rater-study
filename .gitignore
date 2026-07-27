@@ -30,11 +30,14 @@ test-results/
 playwright-report/
 blob-report/
 
-# DICOM data - NEVER commit patient data
-*.dcm
+# DICOM data - NEVER commit patient data (raw sources)
 local-data/
-public/assets/cases/
 DICOM/
+
+# Allow anonymized DICOM data in public/dicom-data/ for deployment
+# (these are stripped of all PHI by scripts/anonymize-dicoms.py)
+# Use negation pattern to override the general *.dcm exclusion
+public/assets/cases/
 
 # Logs
 npm-debug.log*

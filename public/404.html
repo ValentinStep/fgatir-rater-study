@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Redirecting...</title>
+    <script>
+      // Single-page app redirect for GitHub Pages
+      // Redirects 404s back to index.html preserving the path
+      const segment = 1; // number of path segments to keep (repo name)
+      const path = window.location.pathname
+        .split('/')
+        .slice(0, 1 + segment)
+        .join('/');
+      window.location.replace(path + '/' + window.location.search + window.location.hash);
+    </script>
+  </head>
+  <body></body>
+</html>
