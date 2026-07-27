@@ -15,6 +15,7 @@ import { DiagnosticPanel } from '@/components/DiagnosticPanel/DiagnosticPanel';
 import { ProgressHeader } from '@/components/ProgressHeader/ProgressHeader';
 import { RatingForm } from '@/components/RatingForm/RatingForm';
 import { CompletionScreen } from '@/components/CompletionScreen';
+import { RaterLogin } from '@/components/RaterLogin';
 import { getImageSource } from '@/services/imageSource';
 import { getRatingService } from '@/services/ratingService';
 import { SessionService, buildAssignments, buildPairedAssignments } from '@/services/sessionService';
@@ -29,13 +30,14 @@ import type {
 } from '@/types';
 import type { StudyManifest } from '@/services/imageSource';
 
-type AppView = 'loading' | 'viewer' | 'error' | 'complete';
+type AppView = 'login' | 'loading' | 'viewer' | 'error' | 'complete';
 
 const RENDERING_ENGINE_ID = 'fgatir-rendering-engine';
 const VIEWPORT_ID = 'fgatir-stack-viewport';
 
 function App() {
-  const [view, setView] = useState<AppView>('loading');
+  const [view, setView] = useState<AppView>('login');
+  const [raterId, setRaterId] = useState<string>('');
   const [loadingStatus, setLoadingStatus] = useState('Starting...');
   const [error, setError] = useState<string | null>(null);
   const [imageIds, setImageIds] = useState<string[]>([]);
@@ -73,8 +75,15 @@ function App() {
 
   const isSideBySide = STUDY_CONFIG.displayMode === 'sideBySide';
 
+  // Handle rater login
+  const handleRaterLogin = useCallback((id: string) => {
+    setRaterId(id);
+    setView('loading');
+  }, []);
+
   // Initialize Cornerstone, load manifest, and set up session
   useEffect(() => {
+    if (view !== 'loading' || !raterId) return;
     let cancelled = false;
 
     async function initialize() {
@@ -93,7 +102,7 @@ function App() {
         if (cancelled) return;
         setManifest(loadedManifest);
 
-        const raterId = STUDY_CONFIG.devRaterId;
+        // raterId comes from login state
 
         if (isSideBySide) {
           // --- Side-by-side mode: paired assignments ---
@@ -242,7 +251,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [isSideBySide]);
+  }, [isSideBySide, view, raterId]);
 
   // Unsaved changes warning (beforeunload)
   useEffect(() => {
@@ -315,7 +324,7 @@ function App() {
 
         const submission: RatingSubmission = {
           id: `${assignmentToSubmit.id}_${Date.now()}`,
-          raterId: STUDY_CONFIG.devRaterId,
+          raterId,
           assignmentId: assignmentToSubmit.id,
           seriesId: assignmentToSubmit.seriesId,
           responses,
@@ -428,7 +437,7 @@ function App() {
     if (view !== 'complete') return;
     const loadSubmissions = async () => {
       const ratingService = getRatingService();
-      const ratings = await ratingService.getRatings(STUDY_CONFIG.devRaterId);
+      const ratings = await ratingService.getRatings(raterId);
       setCompletedSubmissions(ratings);
     };
     loadSubmissions();
@@ -441,6 +450,14 @@ function App() {
 
   return (
     <div className="app" style={appStyle}>
+      {/* Login state */}
+      {view === 'login' && (
+        <RaterLogin
+          studyDisplayName={STUDY_CONFIG.displayName}
+          onLogin={handleRaterLogin}
+        />
+      )}
+
       {/* Loading state */}
       {view === 'loading' && (
         <div style={centeredStyle}>
@@ -473,7 +490,7 @@ function App() {
       {/* Complete state */}
       {view === 'complete' && (
         <CompletionScreen
-          raterId={STUDY_CONFIG.devRaterId}
+          raterId={raterId}
           submissions={completedSubmissions}
           totalItems={totalItems}
           studyDisplayName={STUDY_CONFIG.displayName}

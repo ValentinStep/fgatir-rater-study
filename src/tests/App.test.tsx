@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock cornerstone modules before importing App
@@ -81,17 +81,27 @@ import App from '../app/App';
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
-  it('renders loading state initially', () => {
+  it('renders login screen initially', () => {
     render(<App />);
+    expect(screen.getByText('Rater ID / Initials')).toBeInTheDocument();
+    expect(screen.getByText('Start Study')).toBeInTheDocument();
+  });
+
+  it('renders the study title on login screen', () => {
+    render(<App />);
+    expect(screen.getByText('Image Quality Assessment')).toBeInTheDocument();
+  });
+
+  it('transitions to loading state after login', () => {
+    render(<App />);
+    const input = screen.getByPlaceholderText('e.g., TS, VS, rater-01');
+    fireEvent.change(input, { target: { value: 'TS' } });
+    fireEvent.click(screen.getByText('Start Study'));
     expect(
       screen.getByText('Initializing DICOM viewer...'),
     ).toBeInTheDocument();
-  });
-
-  it('renders the application title in loading state', () => {
-    render(<App />);
-    expect(screen.getByText('FGATIR Rater Study')).toBeInTheDocument();
   });
 });
