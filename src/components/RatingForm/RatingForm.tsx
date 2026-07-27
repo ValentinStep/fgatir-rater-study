@@ -7,7 +7,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { RatingQuestion, RatingResponse, LikertQuestion, TextQuestion } from '@/types';
+import type { RatingQuestion, RatingResponse, LikertQuestion, BooleanQuestion, TextQuestion } from '@/types';
 import { RATING_QUESTIONS, validateResponses } from '@/config/ratingQuestions';
 
 export interface RatingFormProps {
@@ -178,9 +178,16 @@ function QuestionRenderer({ question, value, onChange }: QuestionRendererProps) 
           onChange={onChange}
         />
       );
-    case 'categorical':
     case 'boolean':
-      // Placeholder for future question types
+      return (
+        <BooleanQuestionRenderer
+          question={question}
+          value={value as boolean | null}
+          onChange={onChange}
+        />
+      );
+    case 'categorical':
+      // Placeholder for future question type
       return null;
     default:
       return null;
@@ -237,6 +244,54 @@ function LikertQuestionRenderer({ question, value, onChange }: LikertRendererPro
           ))}
         </div>
         <span style={endpointLabelStyle}>{question.maxLabel}</span>
+      </div>
+    </fieldset>
+  );
+}
+
+// --- Boolean Question ---
+
+interface BooleanRendererProps {
+  question: BooleanQuestion;
+  value: boolean | null;
+  onChange: (value: boolean | null) => void;
+}
+
+function BooleanQuestionRenderer({ question, value, onChange }: BooleanRendererProps) {
+  return (
+    <fieldset style={questionFieldsetStyle}>
+      <legend style={questionLegendStyle}>
+        {question.label}
+        {question.required && <span style={requiredMarkerStyle}> *</span>}
+      </legend>
+      {question.helpText && (
+        <p style={helpTextStyle}>{question.helpText}</p>
+      )}
+      <div style={booleanContainerStyle}>
+        <button
+          type="button"
+          onClick={() => onChange(value === true ? null : true)}
+          style={{
+            ...booleanButtonStyle,
+            ...(value === true ? booleanButtonActiveStyle : {}),
+          }}
+          aria-pressed={value === true}
+          tabIndex={0}
+        >
+          {question.trueLabel}
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(value === false ? null : false)}
+          style={{
+            ...booleanButtonStyle,
+            ...(value === false ? booleanButtonNegativeStyle : {}),
+          }}
+          aria-pressed={value === false}
+          tabIndex={0}
+        >
+          {question.falseLabel}
+        </button>
       </div>
     </fieldset>
   );
@@ -432,6 +487,36 @@ const radioButtonActiveStyle: React.CSSProperties = {
   borderColor: '#6c63ff',
   backgroundColor: '#6c63ff',
   color: '#ffffff',
+};
+
+const booleanContainerStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+};
+
+const booleanButtonStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '8px 12px',
+  fontSize: 12,
+  fontWeight: 500,
+  color: '#aaa',
+  backgroundColor: '#0d0d1a',
+  border: '2px solid #3a3a5a',
+  borderRadius: 6,
+  cursor: 'pointer',
+  transition: 'all 0.15s',
+};
+
+const booleanButtonActiveStyle: React.CSSProperties = {
+  borderColor: '#4caf50',
+  backgroundColor: 'rgba(76, 175, 80, 0.15)',
+  color: '#4caf50',
+};
+
+const booleanButtonNegativeStyle: React.CSSProperties = {
+  borderColor: '#ff6b6b',
+  backgroundColor: 'rgba(255, 107, 107, 0.15)',
+  color: '#ff6b6b',
 };
 
 const textareaStyle: React.CSSProperties = {
