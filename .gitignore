@@ -52,6 +52,16 @@ local-data/unblinding-export.csv
 # Ratings CSV exports (generated locally, never commit)
 ratings-export*.csv
 
+# Internal documentation (kept locally, not shared on public repo)
+CONTRIBUTING.md
+CHANGELOG.md
+TODO.md
+Prompt.txt
+docs/DEVELOPMENT.md
+docs/DEPLOYMENT.md
+supabase/STORAGE.md
+archive/
+
 # Misc
 *.tsbuildinfo
 .eslintcache
