@@ -50,7 +50,7 @@ unblinding-export.csv
 local-data/unblinding-export.csv
 
 # Ratings CSV exports (generated locally, never commit)
-ratings-export-*.csv
+ratings-export*.csv
 
 # Misc
 *.tsbuildinfo

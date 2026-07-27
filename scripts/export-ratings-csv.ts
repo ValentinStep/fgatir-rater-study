@@ -7,9 +7,9 @@
  * into individual columns, and writes a CSV file.
  *
  * Usage:
- *   npx tsx scripts/export-ratings-csv.ts [output_file]
+ *   npm run export-ratings
  *
- * Default output: ratings-export-<timestamp>.csv
+ * Output: ratings-export_YYYY-MM-DD_HHmmss.csv (local time)
  *
  * Requires VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env
  */
@@ -145,10 +145,11 @@ async function main() {
     rows.push(row.join(','));
   }
 
-  // Determine output file
-  const outputArg = process.argv[2];
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const outputFile = outputArg || `ratings-export-${timestamp}.csv`;
+  // Determine output file — always include date/time for uniqueness
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const outputFile = `ratings-export_${timestamp}.csv`;
 
   fs.writeFileSync(outputFile, rows.join('\n') + '\n', 'utf-8');
 
