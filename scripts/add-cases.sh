@@ -37,9 +37,9 @@
 # ============================================================================
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  EDIT THIS — path to your folder containing original/denoised pairs    ║
+# ║  Pass input path as argument, or edit this default                     ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
-INPUT_PATH="/path/to/your/cases"
+INPUT_PATH="${1:-/path/to/your/cases}"
 
 # ============================================================================
 # DO NOT EDIT BELOW THIS LINE
@@ -66,9 +66,12 @@ echo ""
 
 # Validate input path
 if [ "$INPUT_PATH" = "/path/to/your/cases" ]; then
-    echo -e "${RED}ERROR: You must edit INPUT_PATH in this script first!${NC}"
-    echo "  Open: scripts/add-cases.sh"
-    echo "  Set INPUT_PATH to your folder containing original/denoised pairs"
+    echo -e "${RED}ERROR: Provide the input path as an argument!${NC}"
+    echo ""
+    echo "  Usage: scripts/add-cases.sh /path/to/your/cases"
+    echo ""
+    echo "  Example:"
+    echo "    scripts/add-cases.sh /Volumes/research/fieree01lab/labspace/Valentin/FGATIR_denoising/movies/temp"
     exit 1
 fi
 
