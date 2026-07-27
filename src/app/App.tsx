@@ -14,6 +14,7 @@ import type { OrientationPlane } from '@/components/ViewerToolbar/ViewerToolbar'
 import { DiagnosticPanel } from '@/components/DiagnosticPanel/DiagnosticPanel';
 import { ProgressHeader } from '@/components/ProgressHeader/ProgressHeader';
 import { RatingForm } from '@/components/RatingForm/RatingForm';
+import { CompletionScreen } from '@/components/CompletionScreen';
 import { getImageSource } from '@/services/imageSource';
 import { getRatingService } from '@/services/ratingService';
 import { SessionService, buildAssignments, buildPairedAssignments } from '@/services/sessionService';
@@ -59,6 +60,7 @@ function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [completedSubmissions, setCompletedSubmissions] = useState<RatingSubmission[]>([]);
   const [inProgressResponses, setInProgressResponses] = useState<RatingResponse[]>([]);
   const [viewportKey, setViewportKey] = useState(0);
 
@@ -421,6 +423,17 @@ function App() {
   // Determine the total item count for progress display
   const totalItems = isSideBySide ? pairedAssignments.length : assignments.length;
 
+  // Load all submissions when study is complete (for report export)
+  useEffect(() => {
+    if (view !== 'complete') return;
+    const loadSubmissions = async () => {
+      const ratingService = getRatingService();
+      const ratings = await ratingService.getRatings(STUDY_CONFIG.devRaterId);
+      setCompletedSubmissions(ratings);
+    };
+    loadSubmissions();
+  }, [view]);
+
   // Determine display label
   const displayLabel = isSideBySide
     ? (currentPairedAssignment?.displayLabel ?? 'Comparison')
@@ -459,16 +472,13 @@ function App() {
 
       {/* Complete state */}
       {view === 'complete' && (
-        <div style={centeredStyle}>
-          <div style={completeContainerStyle}>
-            <h1 style={titleStyle}>{STUDY_CONFIG.displayName}</h1>
-            <p style={completeTextStyle}>✓ Study Complete</p>
-            <p style={completeDetailStyle}>
-              You have rated all {totalItems} {isSideBySide ? 'comparisons' : 'image sets'}.
-              Thank you for your participation.
-            </p>
-          </div>
-        </div>
+        <CompletionScreen
+          raterId={STUDY_CONFIG.devRaterId}
+          submissions={completedSubmissions}
+          totalItems={totalItems}
+          studyDisplayName={STUDY_CONFIG.displayName}
+          isSideBySide={isSideBySide}
+        />
       )}
 
       {/* Viewer state */}
@@ -641,23 +651,6 @@ const errorDetailStyle: React.CSSProperties = {
 const hintStyle: React.CSSProperties = {
   fontSize: 12,
   color: '#888',
-};
-
-const completeContainerStyle: React.CSSProperties = {
-  textAlign: 'center',
-  padding: 40,
-};
-
-const completeTextStyle: React.CSSProperties = {
-  fontSize: 20,
-  color: '#4caf50',
-  fontWeight: 600,
-  marginBottom: 12,
-};
-
-const completeDetailStyle: React.CSSProperties = {
-  fontSize: 14,
-  color: '#ccc',
 };
 
 const mainLayoutStyle: React.CSSProperties = {
