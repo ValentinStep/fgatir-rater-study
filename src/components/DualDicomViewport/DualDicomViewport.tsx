@@ -15,6 +15,7 @@ import {
   cache,
   type Types,
 } from '@cornerstonejs/core';
+import { computeAutoVOI, voiRangeToWindowLevel } from '../../utils/computeAutoVOI';
 import {
   init as initTools,
   ToolGroupManager,
@@ -236,15 +237,17 @@ export function DualDicomViewport({
 
         if (destroyed) return;
 
-        // Set initial window/level if provided
-        if (initialWindowCenter !== undefined && initialWindowWidth !== undefined) {
-          const voiRange = {
-            lower: initialWindowCenter - initialWindowWidth / 2,
-            upper: initialWindowCenter + initialWindowWidth / 2,
-          };
-          leftViewport.setProperties({ voiRange });
-          rightViewport.setProperties({ voiRange });
-        }
+        // Compute auto-scaled VOI from the left volume's scalar data
+        // This replaces hardcoded defaults that often make images too bright
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const scalarData = (leftVolume as any).voxelManager?.getCompleteScalarDataArray?.()
+          ?? (leftVolume as any).getScalarData?.();
+        const voiRange = scalarData
+          ? computeAutoVOI(scalarData)
+          : { lower: 0, upper: 100 };
+
+        leftViewport.setProperties({ voiRange });
+        rightViewport.setProperties({ voiRange });
 
         // Force render
         leftViewport.render();
@@ -256,13 +259,18 @@ export function DualDicomViewport({
 
         setupCompleteRef.current = true;
 
+        const { windowCenter: autoWC, windowWidth: autoWW } = voiRangeToWindowLevel(voiRange);
+
         setState({
           status: 'ready',
           currentSlice: Math.ceil(numSlices / 2),
           totalSlices: numSlices,
-          windowCenter: initialWindowCenter ?? 0,
-          windowWidth: initialWindowWidth ?? 0,
+          windowCenter: autoWC,
+          windowWidth: autoWW,
         });
+
+        // Notify parent of the auto-computed VOI
+        onVoiChange?.(autoWC, autoWW);
       } catch (error) {
         if (destroyed) return;
         const message = error instanceof Error ? error.message : String(error);
