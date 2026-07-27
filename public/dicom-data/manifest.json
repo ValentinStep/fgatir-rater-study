@@ -2,28 +2,189 @@
   "version": "1.0",
   "cases": [
     {
-      "subjectId": "subject_e0bf6532e081",
+      "subjectId": "subject_c37be7dc71ff",
       "series": [
         {
-          "seriesId": "series_bc5b4745c247",
-          "sliceCount": 160,
-          "rows": 224,
-          "columns": 216,
+          "seriesId": "series_03b422666876",
+          "sliceCount": 286,
+          "rows": 256,
+          "columns": 176,
           "bitsAllocated": 16,
-          "bitsStored": 12,
-          "windowCenter": 21,
-          "windowWidth": 54,
+          "bitsStored": 16,
+          "windowCenter": 334,
+          "windowWidth": 755,
           "transferSyntaxUID": "1.2.840.10008.1.2.1"
         },
         {
-          "seriesId": "series_3497ec7083b3",
-          "sliceCount": 160,
-          "rows": 224,
-          "columns": 216,
+          "seriesId": "series_24c546d97004",
+          "sliceCount": 286,
+          "rows": 256,
+          "columns": 176,
+          "bitsAllocated": 16,
+          "bitsStored": 16,
+          "windowCenter": 334,
+          "windowWidth": 755,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "subject_2ef6105980b3",
+      "series": [
+        {
+          "seriesId": "series_e9d54e68fe12",
+          "sliceCount": 176,
+          "rows": 256,
+          "columns": 256,
           "bitsAllocated": 16,
           "bitsStored": 12,
-          "windowCenter": 21,
-          "windowWidth": 54,
+          "windowCenter": 252,
+          "windowWidth": 497,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "subject_90fde2025959",
+      "series": [
+        {
+          "seriesId": "series_ae4709e0643f",
+          "sliceCount": 176,
+          "rows": 256,
+          "columns": 256,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 252,
+          "windowWidth": 497,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "subject_e3cc30501070",
+      "series": [
+        {
+          "seriesId": "series_83cb00a714a5",
+          "sliceCount": 160,
+          "rows": 256,
+          "columns": 224,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 67,
+          "windowWidth": 192,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        },
+        {
+          "seriesId": "series_24a0e8490ff5",
+          "sliceCount": 160,
+          "rows": 256,
+          "columns": 224,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 67,
+          "windowWidth": 192,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "subject_59678d406fd4",
+      "series": [
+        {
+          "seriesId": "series_0e6feabcadea",
+          "sliceCount": 176,
+          "rows": 256,
+          "columns": 256,
+          "bitsAllocated": 16,
+          "bitsStored": 16,
+          "windowCenter": 167,
+          "windowWidth": 407,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        },
+        {
+          "seriesId": "series_c97acd83f7ab",
+          "sliceCount": 176,
+          "rows": 256,
+          "columns": 256,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 15,
+          "windowWidth": 31,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "subject_0383c1d6b8ab",
+      "series": [
+        {
+          "seriesId": "series_35e2fb7b26b4",
+          "sliceCount": 176,
+          "rows": 256,
+          "columns": 256,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 15,
+          "windowWidth": 31,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "subject_9a85469c69ae",
+      "series": [
+        {
+          "seriesId": "series_fcc0a645a817",
+          "sliceCount": 176,
+          "rows": 256,
+          "columns": 256,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 269,
+          "windowWidth": 600,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        },
+        {
+          "seriesId": "series_7bc3a1e4c535",
+          "sliceCount": 176,
+          "rows": 256,
+          "columns": 256,
+          "bitsAllocated": 16,
+          "bitsStored": 12,
+          "windowCenter": 269,
+          "windowWidth": 600,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "subject_00ddb31a2305",
+      "series": [
+        {
+          "seriesId": "series_d8df1e2c3704",
+          "sliceCount": 302,
+          "rows": 256,
+          "columns": 144,
+          "bitsAllocated": 16,
+          "bitsStored": 16,
+          "windowCenter": 340,
+          "windowWidth": 771,
+          "transferSyntaxUID": "1.2.840.10008.1.2.1"
+        }
+      ]
+    },
+    {
+      "subjectId": "subject_f0a2de453555",
+      "series": [
+        {
+          "seriesId": "series_9f9bf088332b",
+          "sliceCount": 302,
+          "rows": 256,
+          "columns": 144,
+          "bitsAllocated": 16,
+          "bitsStored": 16,
+          "windowCenter": 340,
+          "windowWidth": 771,
           "transferSyntaxUID": "1.2.840.10008.1.2.1"
         }
       ]
